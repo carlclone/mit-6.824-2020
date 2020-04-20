@@ -28,6 +28,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	//go 的插件什么的 , 后面再看 , 就是加载map 和 reduce 函数进来
 	mapf, reducef := loadPlugin(os.Args[1])
 
 	//
@@ -46,8 +47,8 @@ func main() {
 			log.Fatalf("cannot read %v", filename)
 		}
 		file.Close()
-		kva := mapf(filename, string(content))
-		intermediate = append(intermediate, kva...)
+		kva := mapf(filename, string(content))      //执行 map
+		intermediate = append(intermediate, kva...) //kv保存到中间值,很明显是在内存里,这里不考虑爆内存
 	}
 
 	//
@@ -66,16 +67,17 @@ func main() {
 	// and print the result to mr-out-0.
 	//
 	i := 0
-	for i < len(intermediate) {
+	for i < len(intermediate) { //遍历每个中间值
 		j := i + 1
+		//找到某个 key 的个数 j-i 个
 		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
 			j++
 		}
 		values := []string{}
 		for k := i; k < j; k++ {
-			values = append(values, intermediate[k].Value)
+			values = append(values, intermediate[k].Value) //把每个中间值的 value 放进去 , 这个 case 里全是 1
 		}
-		output := reducef(intermediate[i].Key, values)
+		output := reducef(intermediate[i].Key, values) //数有多少个 1
 
 		// this is the correct format for each line of Reduce output.
 		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)

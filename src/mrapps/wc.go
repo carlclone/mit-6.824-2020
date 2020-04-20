@@ -20,15 +20,15 @@ import "strconv"
 //
 func Map(filename string, contents string) []mr.KeyValue {
 	// function to detect word separators.
-	ff := func(r rune) bool { return !unicode.IsLetter(r) }
+	ff := func(r rune) bool { return !unicode.IsLetter(r) } //如果不是 unicode 的字母 的separator
 
 	// split contents into an array of words.
-	words := strings.FieldsFunc(contents, ff)
+	words := strings.FieldsFunc(contents, ff) //separate 成 word 数组
 
 	kva := []mr.KeyValue{}
-	for _, w := range words {
-		kv := mr.KeyValue{w, "1"}
-		kva = append(kva, kv)
+	for _, w := range words { //遍历数组
+		kv := mr.KeyValue{w, "1"} //生成键值对结构体
+		kva = append(kva, kv)     //直接放进去
 	}
 	return kva
 }
@@ -40,5 +40,5 @@ func Map(filename string, contents string) []mr.KeyValue {
 //
 func Reduce(key string, values []string) string {
 	// return the number of occurrences of this word.
-	return strconv.Itoa(len(values))
+	return strconv.Itoa(len(values)) //直接返回该 key 的数组长度 , 也就是该 key 的出现次数
 }
