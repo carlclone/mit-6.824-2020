@@ -33,7 +33,6 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	//取出一个任务
 	task := m.MapUnExecute[0]
 	m.MapUnExecute = m.MapUnExecute[1:]
-
 	//放入执行中
 	m.MapExecuting[task.FileName] = task
 
@@ -97,7 +96,6 @@ func MakeMaster(files []string, nReduce int) *Master {
 			FileName:     file,
 			Status:       WAIT_FOR_EXECUTE,
 			RetrieveTime: time.Now(),
-			FinishedTime: nil,
 		})
 	}
 
