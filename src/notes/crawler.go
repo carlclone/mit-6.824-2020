@@ -14,7 +14,7 @@ import (
 // Serial crawler
 //
 
-//串行爬虫
+//串行爬虫 DFS , 记录visited
 func Serial(url string, fetcher Fetcher, fetched map[string]bool) {
 	if fetched[url] {
 		return
@@ -35,7 +35,7 @@ func Serial(url string, fetcher Fetcher, fetched map[string]bool) {
 //
 
 type fetchState struct {
-	mu      sync.Mutex
+	mu      sync.Mutex //使用锁防止重复爬取
 	fetched map[string]bool
 }
 
@@ -53,7 +53,7 @@ func ConcurrentMutex(url string, fetcher Fetcher, f *fetchState) {
 	if err != nil {
 		return
 	}
-	var done sync.WaitGroup
+	var done sync.WaitGroup // waitGroup 等待所有child threads done
 	for _, u := range urls {
 		done.Add(1)
 		u2 := u
@@ -66,10 +66,11 @@ func ConcurrentMutex(url string, fetcher Fetcher, f *fetchState) {
 		//	ConcurrentMutex(u, fetcher, f)
 		//}(u)
 	}
-	done.Wait()
+	done.Wait() //在主线程wait
 	return
 }
 
+//初始化state 结构体
 func makeState() *fetchState {
 	f := &fetchState{}
 	f.fetched = make(map[string]bool)
@@ -90,17 +91,22 @@ func worker(url string, ch chan []string, fetcher Fetcher) {
 }
 
 func master(ch chan []string, fetcher Fetcher) {
-	n := 1
+	//How does the master know it is done?
+	//    Keeps count of workers in n.
+	//    Each worker sends exactly one item on channel.
+	n := 1 //channel里的item计数
+	//No need to lock the fetched map, because it isn't shared!
 	fetched := make(map[string]bool)
 	for urls := range ch {
 		for _, u := range urls {
 			if fetched[u] == false {
 				fetched[u] = true
-				n += 1
+				n += 1 //item计数+1
 				go worker(u, ch, fetcher)
 			}
 		}
-		n -= 1
+		n -= 1 //如何判断已经爬完了? 已经没有worker往channel里放东西了 ,
+		// 这种模型不太适合爬虫程序 , 反直觉 , 还是用lock好
 		if n == 0 {
 			break
 		}
@@ -140,7 +146,7 @@ type Fetcher interface {
 }
 
 // fakeFetcher is Fetcher that returns canned results.
-type fakeFetcher map[string]*fakeResult
+type fakeFetcher map[string]*fakeResult //还可以这样定义新的结构体,带上新方法
 
 type fakeResult struct {
 	body string

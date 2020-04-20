@@ -86,11 +86,11 @@ func server() {
 	kv.data = map[string]string{}
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
-	l, e := net.Listen("tcp", ":1234")
+	l, e := net.Listen("tcp", ":1234") //阻塞
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	go func() {
+	go func() { //每个连接一个thread
 		for {
 			conn, err := l.Accept()
 			if err == nil {
@@ -103,6 +103,7 @@ func server() {
 	}()
 }
 
+//全部操作加锁 , 和redis一样串行执行
 func (kv *KV) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
