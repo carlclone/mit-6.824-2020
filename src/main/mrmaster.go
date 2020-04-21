@@ -9,7 +9,12 @@ package main
 // Please do not change this file.
 //
 
-import "../mr"
+import (
+	"../mr"
+	"io/ioutil"
+	"log"
+	"regexp"
+)
 import "time"
 import "os"
 import "fmt"
@@ -20,7 +25,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	//清空mr-mid文件夹和mr-out输出
+	//清空mr-mid mr-out
+	files, err := ioutil.ReadDir("./")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, f := range files {
+		if match, _ := regexp.MatchString("mr-mid-*", f.Name()); match {
+			os.Remove(f.Name())
+		}
+		if match, _ := regexp.MatchString("mr-out-*", f.Name()); match {
+			os.Remove(f.Name())
+		}
+	}
 
 	m := mr.MakeMaster(os.Args[1:], 10)
 	for m.Done() == false {
