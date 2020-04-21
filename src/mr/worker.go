@@ -111,6 +111,7 @@ func Worker(mapf func(string, string) []KeyValue,
 				output := reducef(intermediate[i].Key, values) //数有多少个 1
 
 				// this is the correct format for each line of Reduce output.
+				//fmt.Println(output)
 				fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
 
 				i = j
@@ -142,7 +143,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		//保存中间值 , 参考reduce写文件
 		for _, kv := range intermediate {
 			hashKey := ihash(kv.Key) % task.NReduce
-			oname := "./mr-mid/mr-mid-"
+			oname := "./mr-mid-"
 			mrMidName := oname + strconv.Itoa(hashKey)
 
 			exist, err := PathExists(mrMidName)

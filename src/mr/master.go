@@ -2,7 +2,6 @@ package mr
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"strconv"
 	"sync"
@@ -59,13 +58,17 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 		//初始化未执行ReduceTask数组
 		m.ReduceUnExecute = []*Task{}
 		reduceFiles := []string{}
-		files, err := ioutil.ReadDir("./mr-mid")
-		if err != nil {
-			log.Fatal(err)
+
+		for i := 0; i < m.NReduce; i++ {
+			reduceFiles = append(reduceFiles, "mr-mid-"+strconv.Itoa(i))
 		}
-		for _, f := range files {
-			reduceFiles = append(reduceFiles, "mr-mid/"+f.Name())
-		}
+		//files, err := ioutil.ReadDir("./mr-mid")
+		//if err != nil {
+		//	log.Fatal(err)
+		//}
+		//for _, f := range files {
+		//	reduceFiles = append(reduceFiles, "mr-mid/"+f.Name())
+		//}
 
 		for _, file := range reduceFiles {
 			m.ReduceUnExecute = append(m.ReduceUnExecute, &Task{
