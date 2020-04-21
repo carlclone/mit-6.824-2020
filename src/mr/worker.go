@@ -150,37 +150,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		intermediate = exeMapFun(filename, mapf, intermediate)
 		//fmt.Println(intermediate)
 		//保存中间值 , 参考reduce写文件
-		for _, kv := range intermediate {
-			hashKey := ihash(kv.Key) % task.NReduce
-			oname := "./mr-mid-"
-			mrMidName := oname + strconv.Itoa(hashKey)
-
-			exist, err := PathExists(mrMidName)
-			if err != nil {
-				panic(err)
-				return
-			}
-
-			var ofile *os.File
-			if exist {
-				//ofile, _ = os.Open(mrMidName)
-				ofile, err = os.OpenFile(mrMidName, os.O_WRONLY|os.O_APPEND, 0666)
-				if err != nil {
-					panic(err)
-				}
-			} else {
-				ofile, err = os.Create(mrMidName)
-				if err != nil {
-					panic(err)
-				}
-			}
-
-			str := fmt.Sprintf("%v %v\n", kv.Key, kv.Value)
-			ofile.Write([]byte(str))
-
-			ofile.Close()
-
-		}
+		SaveIntermediate(intermediate, task)
 
 		//更新任务状态
 		NoticeTaskFinished(task)
@@ -188,6 +158,40 @@ func Worker(mapf func(string, string) []KeyValue,
 		time.Sleep(1 * time.Second)
 	}
 
+}
+
+func SaveIntermediate(intermediate []KeyValue, task *Task) {
+	for _, kv := range intermediate {
+		hashKey := ihash(kv.Key) % task.NReduce
+		oname := "./mr-mid-"
+		mrMidName := oname + strconv.Itoa(hashKey)
+
+		exist, err := PathExists(mrMidName)
+		if err != nil {
+			panic(err)
+			//return
+		}
+
+		var ofile *os.File
+		if exist {
+			//ofile, _ = os.Open(mrMidName)
+			ofile, err = os.OpenFile(mrMidName, os.O_WRONLY|os.O_APPEND, 0666)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			ofile, err = os.Create(mrMidName)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		str := fmt.Sprintf("%v %v\n", kv.Key, kv.Value)
+		ofile.Write([]byte(str))
+
+		ofile.Close()
+
+	}
 }
 
 func NoticeTaskFinished(task *Task) {
