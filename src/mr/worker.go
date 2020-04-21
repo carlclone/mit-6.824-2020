@@ -52,7 +52,6 @@ func Worker(mapf func(string, string) []KeyValue,
 		//获取一个任务
 		args := AskForTaskArgs{}
 		reply := AskForTaskReply{}
-		args.WorkerId = os.Getpid() //万一进程id重新分配给了其他进程?  是不是有bug
 		call("Master.RetrieveTask", &args, &reply)
 		//fmt.Println(reply.Status)
 		if reply.Status == ASK_FOR_TASK_FAIL {
@@ -115,7 +114,6 @@ func Worker(mapf func(string, string) []KeyValue,
 			// and print the result to mr-out-0.
 			//
 			i := 0
-			var str string
 			for i < len(intermediate) { //遍历每个中间值
 				j := i + 1
 				//找到某个 key 的个数 j-i 个
@@ -130,21 +128,9 @@ func Worker(mapf func(string, string) []KeyValue,
 
 				// this is the correct format for each line of Reduce output.
 				//fmt.Println(output)
-				//fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+				fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
 
-				str += fmt.Sprintf("%v %v\n", intermediate[i].Key, output)
 				i = j
-			}
-
-			//检查状态
-			args := CheckTaskArgs{}
-			reply := CheckTaskReply{}
-			args.WorkerId = os.Getpid() //万一进程id重新分配给了其他进程?  是不是有bug
-			call("Master.RetrieveTask", &args, &reply)
-			if "check fail" {
-				continue
-			} else {
-				ofile.Write([]byte(str))
 			}
 
 			ofile.Close()

@@ -17,8 +17,6 @@ type Task struct {
 	FinishedTime time.Time
 
 	NReduce int
-
-	WorkerId int
 }
 
 func (t *Task) isTimeOut() bool {
