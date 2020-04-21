@@ -33,13 +33,14 @@ type AskForTaskReply struct {
 	Task *Task
 }
 
-type UpdateTaskStatusArgs struct {
-	Task         *Task
-	Status       int
+type TaskFinishedArgs struct {
+	Task *Task
+	//Status       int
 	FinishedTime time.Time
+	Intermediate []KeyValue
 }
 
-type UpdateTaskStatusReply struct {
+type TaskFinishedReply struct {
 }
 
 // Cook up a unique-ish UNIX-domain socket name

@@ -15,6 +15,8 @@ type Task struct {
 	Status       int
 	RetrieveTime time.Time
 	FinishedTime time.Time
+
+	NReduce int
 }
 
 func (t *Task) isTimeOut() bool {

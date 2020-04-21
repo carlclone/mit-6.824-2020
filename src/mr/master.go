@@ -22,6 +22,8 @@ type Master struct {
 	ReduceExecuted map[string]*Task
 
 	mu sync.Mutex
+
+	NReduce int
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -42,13 +44,22 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	return nil
 }
 
-func (m *Master) UpdateTask(args *UpdateTaskStatusArgs, reply *UpdateTaskStatusReply) error {
-	if task, ok := m.MapExecuting[args.Task.FileName]; !ok {
+func (m *Master) UpdateMapTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
+	task, ok := m.MapExecuting[args.Task.FileName]
+	if !ok {
 		return nil
 	}
 
-	task.St
+	task.Status = EXECUTED
+	task.FinishedTime = args.Task.FinishedTime
 
+	delete(m.MapExecuting, task.FileName)
+
+	m.MapExecuted[task.FileName] = task
+
+	//StoreInterMidiate(args.Intermediate)
+
+	return nil
 }
 
 //
@@ -105,12 +116,14 @@ func MakeMaster(files []string, nReduce int) *Master {
 			FileName:     file,
 			Status:       WAIT_FOR_EXECUTE,
 			RetrieveTime: time.Now(),
+			NReduce:      nReduce,
 		})
 	}
 
 	//初始化 map
 	m.MapExecuted = make(map[string]*Task)
 	m.MapExecuting = make(map[string]*Task)
+	m.NReduce = nReduce
 
 	m.server()
 	return &m
