@@ -53,7 +53,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		args := AskForTaskArgs{}
 		reply := AskForTaskReply{}
 		call("Master.RetrieveTask", &args, &reply)
-		fmt.Println(reply.Status)
+		//fmt.Println(reply.Status)
 		if reply.Status == ASK_FOR_TASK_FAIL {
 			time.Sleep(1 * time.Second)
 			continue
@@ -136,7 +136,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		filename := task.FileName
 		intermediate := []KeyValue{}
 
-		fmt.Println(task.FileName)
+		//fmt.Println(task.FileName)
 		//执行任务 , 参考sequential
 		intermediate = exeMapFun(filename, mapf, intermediate)
 		//fmt.Println(intermediate)
