@@ -116,7 +116,7 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	return nil
 }
 
-func (m *Master) UpdateMapTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
+func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
 	if args.Task.Type == TYPE_REDUCE {
 		task, ok := m.ReduceExecuting[args.Task.FileName]
 		if !ok {

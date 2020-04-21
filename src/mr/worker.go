@@ -143,7 +143,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			uargs.FinishedTime = time.Now()
 			//uargs.Intermediate = intermediate
 
-			call("Master.UpdateMapTaskFinished", &uargs, &ureply)
+			call("Master.UpdateTaskFinished", &uargs, &ureply)
 
 			time.Sleep(1 * time.Second)
 			continue
@@ -197,7 +197,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		uargs.FinishedTime = time.Now()
 		uargs.Intermediate = intermediate
 
-		call("Master.UpdateMapTaskFinished", &uargs, &ureply)
+		call("Master.UpdateTaskFinished", &uargs, &ureply)
 
 		//CallExample()
 		//AskForTask()
