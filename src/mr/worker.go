@@ -47,51 +47,31 @@ func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	//var task *Task
 	for {
 		//获取一个任务
-		args := AskForTaskArgs{}
-		reply := AskForTaskReply{}
-		call("Master.RetrieveTask", &args, &reply)
-		fmt.Println("reply_status:" + strconv.Itoa(reply.Status))
+		reply := GetTask()
+		//获取失败
 		if reply.Status == ASK_FOR_TASK_FAIL {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-
+		//master 已经 Done , worker 退出
 		if reply.Status == ASK_FOR_TASK_DONE {
 			break
 		}
 
 		task := reply.Task
 
-		if task.Type == TYPE_REDUCE {
-
+		switch task.Type {
+		case TYPE_REDUCE:
 			filename := task.FileName
 			fmt.Println(task.FileName)
-
 			//从文件读取intermediate []KeyValue
 			file_bytes, err := ioutil.ReadFile(filename)
 			if err != nil {
 				panic(err)
 			}
 			lines := strings.Split(string(file_bytes), "\n")
-
-			/*
-				The worker's map task code will need a way to store intermediate key/value pairs in files in a way that can be correctly read back during reduce tasks. One possibility is to use Go's encoding/json package. To write key/value pairs to a JSON file:
-				  enc := json.NewEncoder(file)
-				  for _, kv := ... {
-				    err := enc.Encode(&kv)
-				and to read such a file back:
-				  dec := json.NewDecoder(file)
-				  for {
-				    var kv KeyValue
-				    if err := dec.Decode(&kv); err != nil {
-				      break
-				    }
-				    kva = append(kva, kv)
-				  }
-			*/
 			intermediate := []KeyValue{}
 			for _, line := range lines {
 				items := strings.Split(line, " ")
@@ -100,64 +80,67 @@ func Worker(mapf func(string, string) []KeyValue,
 				}
 				intermediate = append(intermediate, KeyValue{Key: items[0], Value: items[1]})
 			}
-
 			//执行任务,参考sequential
-			sort.Sort(ByKey(intermediate))
-
-			//taskNum:=strings.Split(filename,"-")
-			last1 := filename[len(filename)-1:]
-			oname := "mr-out-" + last1
-			ofile, _ := os.Create(oname)
-
-			//
-			// call Reduce on each distinct key in intermediate[],
-			// and print the result to mr-out-0.
-			//
-			i := 0
-			for i < len(intermediate) { //遍历每个中间值
-				j := i + 1
-				//找到某个 key 的个数 j-i 个
-				for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
-					j++
-				}
-				values := []string{}
-				for k := i; k < j; k++ {
-					values = append(values, intermediate[k].Value) //把每个中间值的 value 放进去 , 这个 case 里全是 1
-				}
-				output := reducef(intermediate[i].Key, values) //数有多少个 1
-
-				// this is the correct format for each line of Reduce output.
-				//fmt.Println(output)
-				fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
-
-				i = j
-			}
-
-			ofile.Close()
-
+			ExecuteReduce(intermediate, filename, reducef)
 			//更新任务状态
 			NoticeTaskFinished(task)
-
-			time.Sleep(1 * time.Second)
-			continue
+		case TYPE_MAP:
+			filename := task.FileName
+			intermediate := []KeyValue{}
+			//fmt.Println(task.FileName)
+			//执行任务 , 参考sequential
+			intermediate = exeMapFun(filename, mapf, intermediate)
+			//fmt.Println(intermediate)
+			//保存中间值 , 参考reduce写文件
+			SaveIntermediate(intermediate, task)
+			//更新任务状态
+			NoticeTaskFinished(task)
 		}
 
-		filename := task.FileName
-		intermediate := []KeyValue{}
-
-		//fmt.Println(task.FileName)
-		//执行任务 , 参考sequential
-		intermediate = exeMapFun(filename, mapf, intermediate)
-		//fmt.Println(intermediate)
-		//保存中间值 , 参考reduce写文件
-		SaveIntermediate(intermediate, task)
-
-		//更新任务状态
-		NoticeTaskFinished(task)
-
 		time.Sleep(1 * time.Second)
+
 	}
 
+}
+
+func GetTask() AskForTaskReply {
+	args := AskForTaskArgs{}
+	reply := AskForTaskReply{}
+	call("Master.RetrieveTask", &args, &reply)
+	fmt.Println("reply_status:" + strconv.Itoa(reply.Status))
+	return reply
+}
+
+func ExecuteReduce(intermediate []KeyValue, filename string, reducef func(string, []string) string) {
+	sort.Sort(ByKey(intermediate))
+	//taskNum:=strings.Split(filename,"-")
+	last1 := filename[len(filename)-1:]
+	oname := "mr-out-" + last1
+	ofile, _ := os.Create(oname)
+	//
+	// call Reduce on each distinct key in intermediate[],
+	// and print the result to mr-out-0.
+	//
+	i := 0
+	for i < len(intermediate) { //遍历每个中间值
+		j := i + 1
+		//找到某个 key 的个数 j-i 个
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value) //把每个中间值的 value 放进去 , 这个 case 里全是 1
+		}
+		output := reducef(intermediate[i].Key, values) //数有多少个 1
+
+		// this is the correct format for each line of Reduce output.
+		//fmt.Println(output)
+		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+	ofile.Close()
 }
 
 func SaveIntermediate(intermediate []KeyValue, task *Task) {
