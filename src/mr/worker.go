@@ -68,7 +68,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		if task.Type == TYPE_REDUCE {
 
 			filename := task.FileName
-			fmt.Println(task.FileName)
+			//fmt.Println(task.FileName)
 
 			//从文件读取intermediate []KeyValue
 			file_bytes, err := ioutil.ReadFile(filename)
