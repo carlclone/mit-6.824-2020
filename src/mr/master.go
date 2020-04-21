@@ -1,8 +1,9 @@
 package mr
 
 import (
+	"io/ioutil"
 	"log"
-	"strconv"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -58,16 +59,18 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 		m.ReduceUnExecute = []*Task{}
 		reduceFiles := []string{}
 
-		for i := 0; i < m.NReduce; i++ {
-			reduceFiles = append(reduceFiles, "mr-mid-"+strconv.Itoa(i))
+		//for i := 0; i < m.NReduce; i++ {
+		//	reduceFiles = append(reduceFiles, "mr-mid-"+strconv.Itoa(i))
+		//}
+		files, err := ioutil.ReadDir("./")
+		if err != nil {
+			log.Fatal(err)
 		}
-		//files, err := ioutil.ReadDir("./mr-mid")
-		//if err != nil {
-		//	log.Fatal(err)
-		//}
-		//for _, f := range files {
-		//	reduceFiles = append(reduceFiles, "mr-mid/"+f.Name())
-		//}
+		for _, f := range files {
+			if match, _ := regexp.MatchString("mr-mid-*", f.Name()); match {
+				reduceFiles = append(reduceFiles, f.Name())
+			}
+		}
 
 		for _, file := range reduceFiles {
 			m.ReduceUnExecute = append(m.ReduceUnExecute, &Task{
