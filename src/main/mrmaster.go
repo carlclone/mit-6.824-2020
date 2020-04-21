@@ -20,6 +20,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	//清空mr-mid文件夹和mr-out输出
+
 	m := mr.MakeMaster(os.Args[1:], 10)
 	for m.Done() == false {
 		time.Sleep(time.Second)

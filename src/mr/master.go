@@ -45,7 +45,7 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 		return nil
 	}
 
-	//如果没有任务了,返回状态码
+	//如果没有reduce任务了,返回状态码
 	if m.ReduceUnExecute != nil && len(m.ReduceUnExecute) == 0 {
 		reply.Status = ASK_FOR_TASK_FAIL
 		return nil
@@ -94,6 +94,11 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 		return nil
 	}
 
+	//如果没有map任务了,返回状态码
+	if m.MapUnExecute != nil && len(m.MapUnExecute) == 0 {
+		reply.Status = ASK_FOR_TASK_FAIL
+		return nil
+	}
 	//取出一个任务
 	task := m.MapUnExecute[0]
 	m.MapUnExecute = m.MapUnExecute[1:]
@@ -187,6 +192,7 @@ func (m *Master) Done() bool {
 // nReduce is the number of reduce tasks to use.  把中间值哈希成10份
 //
 func MakeMaster(files []string, nReduce int) *Master {
+
 	m := Master{}
 
 	//初始化未执行MapTask数组
