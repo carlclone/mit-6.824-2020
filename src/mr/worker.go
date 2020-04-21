@@ -76,6 +76,22 @@ func Worker(mapf func(string, string) []KeyValue,
 				panic(err)
 			}
 			lines := strings.Split(string(file_bytes), "\n")
+
+			/*
+				The worker's map task code will need a way to store intermediate key/value pairs in files in a way that can be correctly read back during reduce tasks. One possibility is to use Go's encoding/json package. To write key/value pairs to a JSON file:
+				  enc := json.NewEncoder(file)
+				  for _, kv := ... {
+				    err := enc.Encode(&kv)
+				and to read such a file back:
+				  dec := json.NewDecoder(file)
+				  for {
+				    var kv KeyValue
+				    if err := dec.Decode(&kv); err != nil {
+				      break
+				    }
+				    kva = append(kva, kv)
+				  }
+			*/
 			intermediate := []KeyValue{}
 			for _, line := range lines {
 				items := strings.Split(line, " ")
