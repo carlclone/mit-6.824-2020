@@ -27,6 +27,7 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 type AskForTaskArgs struct {
+	WorkerId int
 }
 
 const (

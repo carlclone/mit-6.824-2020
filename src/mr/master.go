@@ -90,6 +90,7 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	if mapFinished {
 		//取出reduce一个任务
 		task := m.ReduceUnExecute[0]
+		task.WorkerId = args.WorkerId
 		m.ReduceUnExecute = m.ReduceUnExecute[1:]
 		//放入执行中
 		m.ReduceExecuting[task.FileName] = task
@@ -106,6 +107,7 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	}
 	//取出一个任务
 	task := m.MapUnExecute[0]
+	task.WorkerId = args.WorkerId
 	m.MapUnExecute = m.MapUnExecute[1:]
 	//放入执行中
 	m.MapExecuting[task.FileName] = task
@@ -172,6 +174,19 @@ func (m *Master) server() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
+	go func() {
+		for {
+			for _, task := range m.MapExecuting {
+				if task.isTimeOut() {
+					task.WorkerId = -1
+					delete(m.MapExecuting, task.FileName)
+					m.MapUnExecute = append(m.MapUnExecute, task)
+				}
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
 	go http.Serve(l, nil)
 }
 
