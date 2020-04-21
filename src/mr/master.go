@@ -42,6 +42,15 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	return nil
 }
 
+func (m *Master) UpdateTask(args *UpdateTaskStatusArgs, reply *UpdateTaskStatusReply) error {
+	if task, ok := m.MapExecuting[args.Task.FileName]; !ok {
+		return nil
+	}
+
+	task.St
+
+}
+
 //
 // an example RPC handler.
 //

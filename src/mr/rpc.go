@@ -6,7 +6,10 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
+import (
+	"os"
+	"time"
+)
 import "strconv"
 
 //
@@ -28,6 +31,15 @@ type AskForTaskArgs struct {
 
 type AskForTaskReply struct {
 	Task *Task
+}
+
+type UpdateTaskStatusArgs struct {
+	Task         *Task
+	Status       int
+	FinishedTime time.Time
+}
+
+type UpdateTaskStatusReply struct {
 }
 
 // Cook up a unique-ish UNIX-domain socket name
