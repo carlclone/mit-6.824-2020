@@ -29,8 +29,15 @@ type ExampleReply struct {
 type AskForTaskArgs struct {
 }
 
+const (
+	ASK_FOR_TASK_FAIL    = 0
+	ASK_FOR_TASK_SUCCESS = 1
+	ASK_FOR_TASK_DONE    = 2
+)
+
 type AskForTaskReply struct {
-	Task *Task
+	Task   *Task
+	Status int
 }
 
 type TaskFinishedArgs struct {

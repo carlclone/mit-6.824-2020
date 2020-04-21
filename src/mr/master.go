@@ -35,9 +35,26 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	fmt.Println("unexecute:" + strconv.Itoa(len(m.MapUnExecute)) + "\n" + "executing:" + strconv.Itoa(len(m.MapExecuting)))
+	fmt.Println("reduce_unexecute:" + strconv.Itoa(len(m.ReduceUnExecute)) + "\n" + "reduce_executing:" + strconv.Itoa(len(m.ReduceExecuting)))
+
+	//如果reduce都执行完了
+	reduceFinished := m.ReduceUnExecute != nil && len(m.ReduceUnExecute) == 0 && len(m.ReduceExecuting) == 0
+	if reduceFinished {
+		reply.Status = ASK_FOR_TASK_DONE
+		return nil
+	}
+
+	//如果没有任务了,返回状态码
+	if m.ReduceUnExecute != nil && len(m.ReduceUnExecute) == 0 {
+		reply.Status = ASK_FOR_TASK_FAIL
+		return nil
+	}
+
+	reply.Status = ASK_FOR_TASK_SUCCESS
 	//如果map任务都执行完了 , 就分发reduce任务 , 第一次先初始化
 	mapFinished := len(m.MapUnExecute) == 0 && len(m.MapExecuting) == 0
-	fmt.Println("unexecute:" + strconv.Itoa(len(m.MapUnExecute)) + "\n" + "executing:" + strconv.Itoa(len(m.MapExecuting)))
+
 	if mapFinished && m.ReduceUnExecute == nil {
 		//初始化未执行ReduceTask数组
 		m.ReduceUnExecute = []*Task{}
@@ -90,18 +107,23 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 }
 
 func (m *Master) UpdateMapTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
-	task, ok := m.MapExecuting[args.Task.FileName]
-	if !ok {
-		return nil
-	}
+	if args.Task.Type == TYPE_REDUCE {
+		task, ok := m.ReduceExecuting[args.Task.FileName]
+		if !ok {
+			return nil
+		}
 
-	if task.Type == TYPE_REDUCE {
 		task.Status = EXECUTED
 		task.FinishedTime = args.Task.FinishedTime
 
 		delete(m.ReduceExecuting, task.FileName)
 
 		m.ReduceExecuted[task.FileName] = task
+		return nil
+	}
+
+	task, ok := m.MapExecuting[args.Task.FileName]
+	if !ok {
 		return nil
 	}
 
@@ -148,11 +170,15 @@ func (m *Master) server() {
 // if the entire job has finished.
 //
 func (m *Master) Done() bool {
-	ret := false
 
 	// Your code here.
+	//如果reduce都执行完了
+	reduceFinished := m.ReduceUnExecute != nil && len(m.ReduceUnExecute) == 0 && len(m.ReduceExecuting) == 0
+	if reduceFinished {
+		return true
+	}
 
-	return ret
+	return false
 }
 
 //
