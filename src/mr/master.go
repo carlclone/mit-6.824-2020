@@ -1,9 +1,11 @@
 package mr
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"regexp"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -34,8 +36,8 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	//fmt.Println("unexecute:" + strconv.Itoa(len(m.MapUnExecute)) + "\n" + "executing:" + strconv.Itoa(len(m.MapExecuting)))
-	//fmt.Println("reduce_unexecute:" + strconv.Itoa(len(m.ReduceUnExecute)) + "\n" + "reduce_executing:" + strconv.Itoa(len(m.ReduceExecuting)))
+	fmt.Println("unexecute:" + strconv.Itoa(len(m.MapUnExecute)) + "\n" + "executing:" + strconv.Itoa(len(m.MapExecuting)))
+	fmt.Println("reduce_unexecute:" + strconv.Itoa(len(m.ReduceUnExecute)) + "\n" + "reduce_executing:" + strconv.Itoa(len(m.ReduceExecuting)))
 
 	//如果reduce都执行完了
 	reduceFinished := m.ReduceUnExecute != nil && len(m.ReduceUnExecute) == 0 && len(m.ReduceExecuting) == 0

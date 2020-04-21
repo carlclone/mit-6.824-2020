@@ -53,7 +53,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		args := AskForTaskArgs{}
 		reply := AskForTaskReply{}
 		call("Master.RetrieveTask", &args, &reply)
-		//fmt.Println(reply.Status)
+		fmt.Println("reply_status:" + strconv.Itoa(reply.Status))
 		if reply.Status == ASK_FOR_TASK_FAIL {
 			time.Sleep(1 * time.Second)
 			continue
@@ -68,7 +68,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		if task.Type == TYPE_REDUCE {
 
 			filename := task.FileName
-			//fmt.Println(task.FileName)
+			fmt.Println(task.FileName)
 
 			//从文件读取intermediate []KeyValue
 			file_bytes, err := ioutil.ReadFile(filename)
