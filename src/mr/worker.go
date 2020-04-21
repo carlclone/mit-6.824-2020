@@ -147,15 +147,22 @@ func Worker(mapf func(string, string) []KeyValue,
 
 			exist, err := PathExists(mrMidName)
 			if err != nil {
+				panic(err)
 				return
 			}
 
 			var ofile *os.File
 			if exist {
 				//ofile, _ = os.Open(mrMidName)
-				ofile, _ = os.OpenFile(mrMidName, os.O_WRONLY|os.O_APPEND, 0666)
+				ofile, err = os.OpenFile(mrMidName, os.O_WRONLY|os.O_APPEND, 0666)
+				if err != nil {
+					panic(err)
+				}
 			} else {
-				ofile, _ = os.Create(mrMidName)
+				ofile, err = os.Create(mrMidName)
+				if err != nil {
+					panic(err)
+				}
 			}
 
 			str := fmt.Sprintf("%v %v\n", kv.Key, kv.Value)
