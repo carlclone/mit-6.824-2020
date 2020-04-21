@@ -1,7 +1,10 @@
 package mr
 
 import (
+	"fmt"
+	"io/ioutil"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -32,6 +35,48 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	//如果map任务都执行完了 , 就分发reduce任务 , 第一次先初始化
+	mapFinished := len(m.MapUnExecute) == 0 && len(m.MapExecuting) == 0
+	fmt.Println("unexecute:" + strconv.Itoa(len(m.MapUnExecute)) + "\n" + "executing:" + strconv.Itoa(len(m.MapExecuting)))
+	if mapFinished && m.ReduceUnExecute == nil {
+		//初始化未执行ReduceTask数组
+		m.ReduceUnExecute = []*Task{}
+		reduceFiles := []string{}
+		files, err := ioutil.ReadDir("./mr-mid")
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, f := range files {
+			reduceFiles = append(reduceFiles, "mr-mid/"+f.Name())
+		}
+
+		for _, file := range reduceFiles {
+			m.ReduceUnExecute = append(m.ReduceUnExecute, &Task{
+				Type:         TYPE_REDUCE,
+				FileName:     file,
+				Status:       WAIT_FOR_EXECUTE,
+				RetrieveTime: time.Now(),
+				NReduce:      m.NReduce,
+			})
+		}
+
+		//初始化 map
+		m.ReduceExecuted = make(map[string]*Task)
+		m.ReduceExecuting = make(map[string]*Task)
+	}
+
+	if mapFinished {
+		//取出reduce一个任务
+		task := m.ReduceUnExecute[0]
+		m.ReduceUnExecute = m.ReduceUnExecute[1:]
+		//放入执行中
+		m.ReduceExecuting[task.FileName] = task
+
+		//返回给客户端
+		reply.Task = task
+		return nil
+	}
+
 	//取出一个任务
 	task := m.MapUnExecute[0]
 	m.MapUnExecute = m.MapUnExecute[1:]
@@ -47,6 +92,16 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 func (m *Master) UpdateMapTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
 	task, ok := m.MapExecuting[args.Task.FileName]
 	if !ok {
+		return nil
+	}
+
+	if task.Type == TYPE_REDUCE {
+		task.Status = EXECUTED
+		task.FinishedTime = args.Task.FinishedTime
+
+		delete(m.ReduceExecuting, task.FileName)
+
+		m.ReduceExecuted[task.FileName] = task
 		return nil
 	}
 
@@ -108,7 +163,7 @@ func (m *Master) Done() bool {
 func MakeMaster(files []string, nReduce int) *Master {
 	m := Master{}
 
-	//初始化未执行Task数组
+	//初始化未执行MapTask数组
 	m.MapUnExecute = []*Task{}
 	for _, file := range files {
 		m.MapUnExecute = append(m.MapUnExecute, &Task{

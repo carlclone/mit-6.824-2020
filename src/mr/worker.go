@@ -2,6 +2,8 @@ package mr
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	//"io"
@@ -31,6 +33,14 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
+
 //
 // main/mrworker.go calls this function.
 //
@@ -44,6 +54,73 @@ func Worker(mapf func(string, string) []KeyValue,
 		reply := AskForTaskReply{}
 		call("Master.RetrieveTask", &args, &reply)
 		task := reply.Task
+
+		if task.Type == TYPE_REDUCE {
+
+			filename := task.FileName
+			fmt.Println(task.FileName)
+
+			//从文件读取intermediate []KeyValue
+			file_bytes, err := ioutil.ReadFile(filename)
+			if err != nil {
+				panic(err)
+			}
+			lines := strings.Split(string(file_bytes), "\n")
+			intermediate := []KeyValue{}
+			for _, line := range lines {
+				items := strings.Split(line, " ")
+				if len(items) == 1 {
+					continue
+				}
+				intermediate = append(intermediate, KeyValue{Key: items[0], Value: items[1]})
+			}
+
+			//执行任务,参考sequential
+			sort.Sort(ByKey(intermediate))
+
+			//taskNum:=strings.Split(filename,"-")
+			last1 := filename[len(filename)-1:]
+			oname := "mr-out-" + last1
+			ofile, _ := os.Create(oname)
+
+			//
+			// call Reduce on each distinct key in intermediate[],
+			// and print the result to mr-out-0.
+			//
+			i := 0
+			for i < len(intermediate) { //遍历每个中间值
+				j := i + 1
+				//找到某个 key 的个数 j-i 个
+				for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+					j++
+				}
+				values := []string{}
+				for k := i; k < j; k++ {
+					values = append(values, intermediate[k].Value) //把每个中间值的 value 放进去 , 这个 case 里全是 1
+				}
+				output := reducef(intermediate[i].Key, values) //数有多少个 1
+
+				// this is the correct format for each line of Reduce output.
+				fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+				i = j
+			}
+
+			ofile.Close()
+
+			//更新任务状态
+			uargs := TaskFinishedArgs{}
+			ureply := TaskFinishedReply{}
+
+			uargs.Task = task
+			uargs.FinishedTime = time.Now()
+			//uargs.Intermediate = intermediate
+
+			call("Master.UpdateMapTaskFinished", &uargs, &ureply)
+
+			time.Sleep(1 * time.Second)
+			continue
+		}
 
 		filename := task.FileName
 		intermediate := []KeyValue{}
