@@ -136,14 +136,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			ofile.Close()
 
 			//更新任务状态
-			uargs := TaskFinishedArgs{}
-			ureply := TaskFinishedReply{}
-
-			uargs.Task = task
-			uargs.FinishedTime = time.Now()
-			//uargs.Intermediate = intermediate
-
-			call("Master.UpdateTaskFinished", &uargs, &ureply)
+			NoticeTaskFinished(task)
 
 			time.Sleep(1 * time.Second)
 			continue
@@ -190,21 +183,20 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 
 		//更新任务状态
-		uargs := TaskFinishedArgs{}
-		ureply := TaskFinishedReply{}
-
-		uargs.Task = task
-		uargs.FinishedTime = time.Now()
-		uargs.Intermediate = intermediate
-
-		call("Master.UpdateTaskFinished", &uargs, &ureply)
-
-		//CallExample()
-		//AskForTask()
+		NoticeTaskFinished(task)
 
 		time.Sleep(1 * time.Second)
 	}
 
+}
+
+func NoticeTaskFinished(task *Task) {
+	uargs := TaskFinishedArgs{}
+	ureply := TaskFinishedReply{}
+	uargs.Task = task
+	uargs.FinishedTime = time.Now()
+	//uargs.Intermediate = intermediate
+	call("Master.UpdateTaskFinished", &uargs, &ureply)
 }
 
 func exeMapFun(filename string, mapf func(string, string) []KeyValue, intermediate []KeyValue) []KeyValue {
