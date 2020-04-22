@@ -151,6 +151,18 @@ func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedR
 	return nil
 }
 
+func (m *Master) IsTaskExecuted(args *TaskExecutedArgs, reply *TaskExecutedReply) error {
+	task := args.Task
+	table := task.getTaskExecuted(m)
+
+	if _, ok := table[task.FileName]; ok {
+		reply.Status = TASK_ALREADY_EXECUTED
+	} else {
+		reply.Status = TASK_NOT_EXECUTED
+	}
+	return nil
+}
+
 //
 // an example RPC handler.
 //
@@ -174,6 +186,21 @@ func (m *Master) server() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
+	go func() {
+		for {
+			for _, task := range m.MapExecuting {
+				if task.isTimeOut() {
+					if task.isTaskExecuted(m) {
+						delete(task.getTaskExecuting(m), task.FileName)
+					} else {
+						delete(task.getTaskExecuting(m), task.FileName)
+						*task.getTaskUnExecutes(m) = append(*task.getTaskUnExecutes(m), task)
+					}
+				}
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
 	go http.Serve(l, nil)
 }
 

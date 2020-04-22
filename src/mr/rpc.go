@@ -50,6 +50,19 @@ type TaskFinishedArgs struct {
 type TaskFinishedReply struct {
 }
 
+type TaskExecutedArgs struct {
+	Task *Task
+}
+
+const (
+	TASK_ALREADY_EXECUTED = 1
+	TASK_NOT_EXECUTED     = 2
+)
+
+type TaskExecutedReply struct {
+	Status int
+}
+
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the master.
 // Can't use the current directory since

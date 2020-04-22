@@ -82,21 +82,28 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 			//执行任务,参考sequential
 			reduceOutPut := ExecuteReducef(intermediate, reducef)
-			//保存输出
-			SaveReduceOutPut(filename, reduceOutPut)
-			//更新任务状态
-			NoticeTaskFinished(task)
+
+			taskExecuted := GetIsTaskExecuted(task)
+			if !taskExecuted {
+				//保存输出
+				SaveReduceOutPut(filename, reduceOutPut)
+				//更新任务状态
+				NoticeTaskFinished(task)
+			}
 		case TYPE_MAP:
 			filename := task.FileName
 			intermediate := []KeyValue{}
 			//fmt.Println(task.FileName)
 			//执行任务 , 参考sequential
 			intermediate = exeMapFun(filename, mapf, intermediate)
-			//fmt.Println(intermediate)
-			//保存中间值 , 参考reduce写文件
-			SaveIntermediate(intermediate, task)
-			//更新任务状态
-			NoticeTaskFinished(task)
+			taskExecuted := GetIsTaskExecuted(task)
+			if !taskExecuted {
+				//保存中间值 , 参考reduce写文件
+				SaveIntermediate(intermediate, task)
+				//更新任务状态
+				NoticeTaskFinished(task)
+			}
+
 		}
 
 		time.Sleep(1 * time.Second)
@@ -149,6 +156,18 @@ func GetTask() AskForTaskReply {
 	call("Master.RetrieveTask", &args, &reply)
 	fmt.Println("reply_status:" + strconv.Itoa(reply.Status))
 	return reply
+}
+
+func GetIsTaskExecuted(task *Task) bool {
+	args := TaskExecutedArgs{}
+	args.Task = task
+	reply := TaskExecutedReply{}
+	call("Master.IsTaskExecuted", &args, &reply)
+	fmt.Println("task_executed_status:" + strconv.Itoa(reply.Status))
+	if reply.Status == TASK_ALREADY_EXECUTED {
+		return true
+	}
+	return false
 }
 
 func SaveIntermediate(intermediate []KeyValue, task *Task) {
@@ -233,29 +252,6 @@ func PathExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
-}
-
-//
-// example function to show how to make an RPC call to the master.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func CallExample() {
-
-	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
-
-	// send the RPC request, wait for the reply.
-	call("Master.Example", &args, &reply)
-
-	// reply.Y should be 100.
-	fmt.Printf("reply.Y %v\n", reply.Y)
 }
 
 //

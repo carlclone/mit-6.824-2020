@@ -23,12 +23,22 @@ func (t *Task) isTimeOut() bool {
 	return t.RetrieveTime.Add(10 * time.Second).Before(time.Now())
 }
 
-func (t *Task) getTaskUnExecutes(m *Master) []*Task {
+func (t *Task) isTaskExecuted(m *Master) bool {
+	table := t.getTaskExecuted(m)
+
+	if _, ok := table[t.FileName]; ok {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (t *Task) getTaskUnExecutes(m *Master) *[]*Task {
 	switch t.Type {
 	case TYPE_MAP:
-		return m.MapUnExecute
+		return &m.MapUnExecute
 	case TYPE_REDUCE:
-		return m.ReduceUnExecute
+		return &m.ReduceUnExecute
 	}
 	return nil
 }
