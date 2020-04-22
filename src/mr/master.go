@@ -58,44 +58,16 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 
 	if mapFinished && m.ReduceUnExecute == nil {
 		//初始化未执行ReduceTask数组
-		m.ReduceUnExecute = []*Task{}
-		reduceFiles := []string{}
-
-		//for i := 0; i < m.NReduce; i++ {
-		//	reduceFiles = append(reduceFiles, "mr-mid-"+strconv.Itoa(i))
-		//}
-		files, err := ioutil.ReadDir("./")
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, f := range files {
-			if match, _ := regexp.MatchString("mr-mid-*", f.Name()); match {
-				reduceFiles = append(reduceFiles, f.Name())
-			}
-		}
-
-		for _, file := range reduceFiles {
-			m.ReduceUnExecute = append(m.ReduceUnExecute, &Task{
-				Type:         TYPE_REDUCE,
-				FileName:     file,
-				Status:       WAIT_FOR_EXECUTE,
-				RetrieveTime: time.Now(),
-				NReduce:      m.NReduce,
-			})
-		}
-
-		//初始化 map
-		m.ReduceExecuted = make(map[string]*Task)
-		m.ReduceExecuting = make(map[string]*Task)
+		m.InitReduceTask()
 	}
 
 	if mapFinished {
+
 		//取出reduce一个任务
 		task := m.ReduceUnExecute[0]
 		m.ReduceUnExecute = m.ReduceUnExecute[1:]
 		//放入执行中
 		m.ReduceExecuting[task.FileName] = task
-
 		//返回给客户端
 		reply.Task = task
 		return nil
@@ -116,6 +88,35 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	reply.Task = task
 
 	return nil
+}
+
+func (m *Master) InitReduceTask() {
+	m.ReduceUnExecute = []*Task{}
+	reduceFiles := []string{}
+	//for i := 0; i < m.NReduce; i++ {
+	//	reduceFiles = append(reduceFiles, "mr-mid-"+strconv.Itoa(i))
+	//}
+	files, err := ioutil.ReadDir("./")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, f := range files {
+		if match, _ := regexp.MatchString("mr-mid-*", f.Name()); match {
+			reduceFiles = append(reduceFiles, f.Name())
+		}
+	}
+	for _, file := range reduceFiles {
+		m.ReduceUnExecute = append(m.ReduceUnExecute, &Task{
+			Type:         TYPE_REDUCE,
+			FileName:     file,
+			Status:       WAIT_FOR_EXECUTE,
+			RetrieveTime: time.Now(),
+			NReduce:      m.NReduce,
+		})
+	}
+	//初始化 map
+	m.ReduceExecuted = make(map[string]*Task)
+	m.ReduceExecuting = make(map[string]*Task)
 }
 
 func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
