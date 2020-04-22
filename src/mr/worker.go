@@ -144,8 +144,23 @@ func ExecuteReduce(intermediate []KeyValue, filename string, reducef func(string
 }
 
 func SaveIntermediate(intermediate []KeyValue, task *Task) {
+	//先把相同key的放到同一个数组里 ,  生成相同hashKey的字符串 , 再一并写入
+	tmpSlice := make([][]KeyValue, task.NReduce)
 	for _, kv := range intermediate {
 		hashKey := ihash(kv.Key) % task.NReduce
+		tmpSlice[hashKey] = append(tmpSlice[hashKey], kv)
+	}
+
+	tmpOuputSlice := []string{}
+	for _, v1 := range tmpSlice {
+		tmpStr := ""
+		for _, v2 := range v1 {
+			tmpStr += fmt.Sprintf("%v %v\n", v2.Key, v2.Value)
+		}
+		tmpOuputSlice = append(tmpOuputSlice, tmpStr)
+	}
+
+	for hashKey, v := range tmpOuputSlice {
 		oname := "./mr-mid-"
 		mrMidName := oname + strconv.Itoa(hashKey)
 
@@ -169,11 +184,9 @@ func SaveIntermediate(intermediate []KeyValue, task *Task) {
 			}
 		}
 
-		str := fmt.Sprintf("%v %v\n", kv.Key, kv.Value)
-		ofile.Write([]byte(str))
+		ofile.Write([]byte(v))
 
 		ofile.Close()
-
 	}
 }
 
