@@ -81,7 +81,9 @@ func Worker(mapf func(string, string) []KeyValue,
 				intermediate = append(intermediate, KeyValue{Key: items[0], Value: items[1]})
 			}
 			//执行任务,参考sequential
-			ExecuteReduce(intermediate, filename, reducef)
+			reduceOutPut := ExecuteReducef(intermediate, reducef)
+			//保存输出
+			SaveReduceOutPut(filename, reduceOutPut)
 			//更新任务状态
 			NoticeTaskFinished(task)
 		case TYPE_MAP:
@@ -103,24 +105,22 @@ func Worker(mapf func(string, string) []KeyValue,
 
 }
 
-func GetTask() AskForTaskReply {
-	args := AskForTaskArgs{}
-	reply := AskForTaskReply{}
-	call("Master.RetrieveTask", &args, &reply)
-	fmt.Println("reply_status:" + strconv.Itoa(reply.Status))
-	return reply
-}
-
-func ExecuteReduce(intermediate []KeyValue, filename string, reducef func(string, []string) string) {
-	sort.Sort(ByKey(intermediate))
-	//taskNum:=strings.Split(filename,"-")
+func SaveReduceOutPut(filename string, reduceOutPut string) {
 	last1 := filename[len(filename)-1:]
 	oname := "mr-out-" + last1
 	ofile, _ := os.Create(oname)
+	ofile.Write([]byte(reduceOutPut))
+	ofile.Close()
+}
+
+func ExecuteReducef(intermediate []KeyValue, reducef func(string, []string) string) string {
+	sort.Sort(ByKey(intermediate))
+	//taskNum:=strings.Split(filename,"-")
 	//
 	// call Reduce on each distinct key in intermediate[],
 	// and print the result to mr-out-0.
 	//
+	reduceOutPut := ""
 	i := 0
 	for i < len(intermediate) { //遍历每个中间值
 		j := i + 1
@@ -136,11 +136,19 @@ func ExecuteReduce(intermediate []KeyValue, filename string, reducef func(string
 
 		// this is the correct format for each line of Reduce output.
 		//fmt.Println(output)
-		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+		reduceOutPut += fmt.Sprintf("%v %v\n", intermediate[i].Key, output)
 
 		i = j
 	}
-	ofile.Close()
+	return reduceOutPut
+}
+
+func GetTask() AskForTaskReply {
+	args := AskForTaskArgs{}
+	reply := AskForTaskReply{}
+	call("Master.RetrieveTask", &args, &reply)
+	fmt.Println("reply_status:" + strconv.Itoa(reply.Status))
+	return reply
 }
 
 func SaveIntermediate(intermediate []KeyValue, task *Task) {
