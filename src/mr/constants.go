@@ -20,7 +20,7 @@ type Task struct {
 }
 
 func (t *Task) isTimeOut() bool {
-	return t.RetrieveTime.Add(time.Duration(10000) * time.Millisecond).After(time.Now())
+	return t.RetrieveTime.Add(10 * time.Second).Before(time.Now())
 }
 
 func (t *Task) getTaskUnExecutes(m *Master) []*Task {
