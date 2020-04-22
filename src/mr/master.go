@@ -62,7 +62,6 @@ func (m *Master) RetrieveTask(args *AskForTaskArgs, reply *AskForTaskReply) erro
 	}
 
 	if mapFinished {
-
 		//取出reduce一个任务
 		task := m.ReduceUnExecute[0]
 		m.ReduceUnExecute = m.ReduceUnExecute[1:]

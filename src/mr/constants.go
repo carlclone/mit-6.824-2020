@@ -22,3 +22,33 @@ type Task struct {
 func (t *Task) isTimeOut() bool {
 	return t.RetrieveTime.Add(time.Duration(10000) * time.Millisecond).After(time.Now())
 }
+
+func (t *Task) getTaskUnExecutes(m *Master) []*Task {
+	switch t.Type {
+	case TYPE_MAP:
+		return m.MapUnExecute
+	case TYPE_REDUCE:
+		return m.ReduceUnExecute
+	}
+	return nil
+}
+
+func (t *Task) getTaskExecuting(m *Master) map[string]*Task {
+	switch t.Type {
+	case TYPE_MAP:
+		return m.MapExecuting
+	case TYPE_REDUCE:
+		return m.ReduceExecuting
+	}
+	return nil
+}
+
+func (t *Task) getTaskExecuted(m *Master) map[string]*Task {
+	switch t.Type {
+	case TYPE_MAP:
+		return m.MapExecuted
+	case TYPE_REDUCE:
+		return m.ReduceExecuted
+	}
+	return nil
+}
