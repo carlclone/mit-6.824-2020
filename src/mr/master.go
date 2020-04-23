@@ -198,6 +198,16 @@ func (m *Master) server() {
 					}
 				}
 			}
+			for _, task := range m.ReduceExecuting {
+				if task.isTimeOut() {
+					if task.isTaskExecuted(m) {
+						delete(task.getTaskExecuting(m), task.FileName)
+					} else {
+						delete(task.getTaskExecuting(m), task.FileName)
+						*task.getTaskUnExecutes(m) = append(*task.getTaskUnExecutes(m), task)
+					}
+				}
+			}
 			time.Sleep(1 * time.Second)
 		}
 	}()
