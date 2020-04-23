@@ -40,6 +40,11 @@ type AskForTaskReply struct {
 	Status int
 }
 
+const (
+	TASK_ALREADY_EXECUTED = 1
+	TASK_NOT_EXECUTED     = 2
+)
+
 type TaskFinishedArgs struct {
 	Task *Task
 	//Status       int
@@ -48,16 +53,12 @@ type TaskFinishedArgs struct {
 }
 
 type TaskFinishedReply struct {
+	Status int
 }
 
 type TaskExecutedArgs struct {
 	Task *Task
 }
-
-const (
-	TASK_ALREADY_EXECUTED = 1
-	TASK_NOT_EXECUTED     = 2
-)
 
 type TaskExecutedReply struct {
 	Status int

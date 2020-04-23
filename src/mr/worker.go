@@ -83,12 +83,10 @@ func Worker(mapf func(string, string) []KeyValue,
 			//执行任务,参考sequential
 			reduceOutPut := ExecuteReducef(intermediate, reducef)
 
-			taskExecuted := GetIsTaskExecuted(task)
+			taskExecuted := NoticeTaskFinished(task)
 			if !taskExecuted {
 				//保存输出
 				SaveReduceOutPut(filename, reduceOutPut)
-				//更新任务状态
-				NoticeTaskFinished(task)
 			}
 		case TYPE_MAP:
 			filename := task.FileName
@@ -96,12 +94,11 @@ func Worker(mapf func(string, string) []KeyValue,
 			//fmt.Println(task.FileName)
 			//执行任务 , 参考sequential
 			intermediate = exeMapFun(filename, mapf, intermediate)
-			taskExecuted := GetIsTaskExecuted(task)
+			taskExecuted := NoticeTaskFinished(task)
 			if !taskExecuted {
 				//保存中间值 , 参考reduce写文件
 				SaveIntermediate(intermediate, task)
-				//更新任务状态
-				NoticeTaskFinished(task)
+
 			}
 
 		}
@@ -217,13 +214,18 @@ func SaveIntermediate(intermediate []KeyValue, task *Task) {
 	}
 }
 
-func NoticeTaskFinished(task *Task) {
+func NoticeTaskFinished(task *Task) bool {
 	uargs := TaskFinishedArgs{}
 	ureply := TaskFinishedReply{}
 	uargs.Task = task
 	uargs.FinishedTime = time.Now()
 	//uargs.Intermediate = intermediate
 	call("Master.UpdateTaskFinished", &uargs, &ureply)
+
+	if ureply.Status == TASK_ALREADY_EXECUTED {
+		return true
+	}
+	return false
 }
 
 func exeMapFun(filename string, mapf func(string, string) []KeyValue, intermediate []KeyValue) []KeyValue {
