@@ -133,6 +133,7 @@ func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedR
 	case TYPE_REDUCE:
 		task, ok := m.ReduceExecuting[args.Task.FileName]
 		if !ok {
+			reply.Status = TASK_ALREADY_EXECUTED
 			return nil
 		}
 
@@ -146,6 +147,7 @@ func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedR
 	case TYPE_MAP:
 		task, ok := m.MapExecuting[args.Task.FileName]
 		if !ok {
+			reply.Status = TASK_ALREADY_EXECUTED
 			return nil
 		}
 
