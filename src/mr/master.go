@@ -119,7 +119,9 @@ func (m *Master) InitReduceTask() {
 }
 
 func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
-	if args.Task.Type == TYPE_REDUCE {
+
+	switch args.Task.Type {
+	case TYPE_REDUCE:
 		task, ok := m.ReduceExecuting[args.Task.FileName]
 		if !ok {
 			return nil
@@ -132,21 +134,42 @@ func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedR
 
 		m.ReduceExecuted[task.FileName] = task
 		return nil
+	case TYPE_MAP:
+		task, ok := m.MapExecuting[args.Task.FileName]
+		if !ok {
+			return nil
+		}
+
+		task.Status = EXECUTED
+		task.FinishedTime = args.Task.FinishedTime
+
+		delete(m.MapExecuting, task.FileName)
+
+		m.MapExecuted[task.FileName] = task
+
 	}
 
-	task, ok := m.MapExecuting[args.Task.FileName]
-	if !ok {
-		return nil
+	//在这里检查,避免任务执行完成的瞬间同时超时,被放回重跑
+	for _, task := range m.MapExecuting {
+		if task.isTimeOut() {
+			if task.isTaskExecuted(m) {
+				delete(task.getTaskExecuting(m), task.FileName)
+			} else {
+				delete(task.getTaskExecuting(m), task.FileName)
+				*task.getTaskUnExecutes(m) = append(*task.getTaskUnExecutes(m), task)
+			}
+		}
 	}
-
-	task.Status = EXECUTED
-	task.FinishedTime = args.Task.FinishedTime
-
-	delete(m.MapExecuting, task.FileName)
-
-	m.MapExecuted[task.FileName] = task
-
-	//StoreInterMidiate(args.Intermediate)
+	for _, task := range m.ReduceExecuting {
+		if task.isTimeOut() {
+			if task.isTaskExecuted(m) {
+				delete(task.getTaskExecuting(m), task.FileName)
+			} else {
+				delete(task.getTaskExecuting(m), task.FileName)
+				*task.getTaskUnExecutes(m) = append(*task.getTaskUnExecutes(m), task)
+			}
+		}
+	}
 
 	return nil
 }
@@ -186,31 +209,7 @@ func (m *Master) server() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	go func() {
-		for {
-			for _, task := range m.MapExecuting {
-				if task.isTimeOut() {
-					if task.isTaskExecuted(m) {
-						delete(task.getTaskExecuting(m), task.FileName)
-					} else {
-						delete(task.getTaskExecuting(m), task.FileName)
-						*task.getTaskUnExecutes(m) = append(*task.getTaskUnExecutes(m), task)
-					}
-				}
-			}
-			for _, task := range m.ReduceExecuting {
-				if task.isTimeOut() {
-					if task.isTaskExecuted(m) {
-						delete(task.getTaskExecuting(m), task.FileName)
-					} else {
-						delete(task.getTaskExecuting(m), task.FileName)
-						*task.getTaskUnExecutes(m) = append(*task.getTaskUnExecutes(m), task)
-					}
-				}
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
+
 	go http.Serve(l, nil)
 }
 
