@@ -28,6 +28,8 @@ type Master struct {
 	mu sync.Mutex
 
 	NReduce int
+
+	LockForUpdate sync.Mutex
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -119,7 +121,8 @@ func (m *Master) InitReduceTask() {
 }
 
 func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedReply) error {
-
+	m.LockForUpdate.Lock()
+	defer m.LockForUpdate.Unlock()
 	switch args.Task.Type {
 	case TYPE_REDUCE:
 		task, ok := m.ReduceExecuting[args.Task.FileName]
