@@ -11,6 +11,6 @@ Map parallelism test √
 
 Reduce parallelism test √
 
-Task timeout redistribute test√
+Task timeout redistribute test √
 
-Crash Test  
+Crash Test √
