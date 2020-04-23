@@ -28,6 +28,8 @@ type Master struct {
 	mu sync.Mutex
 
 	NReduce int
+
+	LockForFinished sync.Mutex
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -149,10 +151,13 @@ func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedR
 
 	}
 
+	m.LockForFinished.Unlock()
+
 	return nil
 }
 
 func (m *Master) IsTaskExecuted(args *TaskExecutedArgs, reply *TaskExecutedReply) error {
+	m.LockForFinished.Lock()
 	task := args.Task
 	table := task.getTaskExecuted(m)
 
