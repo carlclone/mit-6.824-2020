@@ -126,7 +126,12 @@ func (m *Master) UpdateTaskFinished(args *TaskFinishedArgs, reply *TaskFinishedR
 		if !ok {
 			return nil
 		}
+		if task.isTaskExecuted(m) {
+			reply.Status = TASK_ALREADY_EXECUTED
+			return nil
+		}
 
+		reply.Status = TASK_NOT_EXECUTED
 		task.Status = EXECUTED
 		task.FinishedTime = args.Task.FinishedTime
 
