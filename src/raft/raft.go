@@ -67,7 +67,7 @@ type Raft struct {
 	//persistent
 	currentTerm int
 	votedFor    int
-	log         []*LogEntry
+	//log         []*LogEntry
 
 	//volatile
 	commitIndex int
@@ -78,6 +78,10 @@ type Raft struct {
 	//other
 	lastTimeHeardFromLeader time.Time
 	role                    int
+
+	//channels , 当做接收事件的通道
+	electTimesUp      chan bool
+	receivedHeartBeat chan bool
 }
 
 // return currentTerm and whether this server
@@ -265,12 +269,44 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C).
 
-	//检测线程 , 每个角色都要检测自己的状态和要做的事
+	//事件循环模型 , 每个角色会触发的事件和需要执行的逻辑
 	go func() {
 		//如果是leader的话,需要定期发心跳包
 		// 如果是follower , 比对lastTimeHeardFromLeader ,  如果超时则转变角色为candidate
 		// 是candidate , 需要发送RV , 并判断自己是否成为了leader ,
 		for {
+
+			switch rf.role {
+			case ROLE_FOLLOWER:
+				select {
+				case <-electTimesUp:
+					//选举超时,变成 candidate
+					rf.role = ROLE_CANDIDATE
+				case <-receivedHeartBeat:
+					//收到心跳包,重置选举超时时间
+					rf.lastTimeHeardFromLeader = time.Now()
+				case <-receivedRequestVote:
+					//判断是否投票
+				}
+			case ROLE_CANDIDATE:
+				select {
+				case <-voteForSelf:
+				//给自己投票和汇集选票
+				case <-electTimesUp:
+				//超时,开始新一轮选举
+				case <-receivedHeartBeat:
+				//变成 follower
+				case <-becomeLeader:
+					//变成 leader
+
+				}
+			case ROLE_LEADER:
+				select {
+				case <-heartBeatTimesUp:
+					//定时发心跳包,可能放到另一个 goroutine 里比较好?
+
+				}
+			}
 
 			time.Sleep(50 * time.Millisecond)
 		}
