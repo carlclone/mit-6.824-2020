@@ -309,7 +309,7 @@ func (rf *Raft) sendHeartBeats() {
 
 //发送RV给所有人除了自己
 func (rf *Raft) askForVotes() {
-	voteCount := 0
+	voteCount := 1
 	for i, _ := range rf.peers {
 		args := RequestVoteArgs{}
 		args.Term = rf.currentTerm
@@ -345,7 +345,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.electTimePeriod = time.Duration(rand.Int63()%333+550) * time.Millisecond
 
 	// Your initialization code here (2A, 2B, 2C).
-	//定时事件触发线程    (在 rpc handler 里也会触发事件,小心并发race)
+	//定时事件触发线程    (在 rpc handler 里也会触发事件,小心并发race) ,
+	// 如果我把所有 race 的逻辑通过推事件的形式执行,是不是就不用 lock 了
 	go func() {
 		switch rf.role {
 		case ROLE_FOLLOWER:
@@ -362,7 +363,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		// 是candidate , 需要发送RV , 并判断自己是否成为了leader ,
 		for {
 
+			//再检查一下 figure2 里的两个 RPC
+
+			//所有角色共同事件
+			select {
+			case <-rf.termLessThanOthers:
+				rf.role = ROLE_FOLLOWER
+
+			}
+
 			switch rf.role {
+			//回应 c 的投票请求(要修改 voteFor) , l 的心跳请求
+			//心跳和投票都会重置选举时间
+			//选举超时投票
 			case ROLE_FOLLOWER:
 				select {
 				case <-rf.electTimesUp:
@@ -373,27 +386,32 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.lastTimeHeardFromLeader = time.Now()
 				}
 
+				//currentTerm++ , vote++ , reset elect time , 汇集选票
+				//获得大多数 , 成为 leader
+				//收到心跳包 / AE RPC, 变成 follower
+				//超时 , 开始新一轮
 			case ROLE_CANDIDATE:
 				select {
 				case <-rf.voteForSelf:
 					//给自己投票和汇集选票
+					rf.currentTerm++
 					rf.votedFor = me
 					rf.askForVotes()
-				case <-electTimesUp:
-				//超时,开始新一轮选举
-				case <-receivedHeartBeat:
-				//变成 follower
+				case <-rf.electTimesUp:
+					//超时,开始新一轮选举
+					rf.voteForSelf <- true
+				case <-rf.receivedHeartBeat:
+					//变成 follower
+					rf.role = ROLE_FOLLOWER
 				case <-rf.becomeLeader:
 					rf.role = ROLE_LEADER
 
 				}
 
+				//定期发心跳包
+				//
 			case ROLE_LEADER:
-				select {
-				case <-heartBeatTimesUp:
-					//定时发心跳包,可能放到另一个 goroutine 里比较好?
-
-				}
+				select {}
 			}
 
 			time.Sleep(50 * time.Millisecond)
