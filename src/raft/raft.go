@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -78,10 +79,16 @@ type Raft struct {
 	//other
 	lastTimeHeardFromLeader time.Time
 	role                    int
+	electTimePeriod         time.Duration
 
-	//channels , 当做接收事件的通道
-	electTimesUp      chan bool
-	receivedHeartBeat chan bool
+	//follower channels , 当做接收事件的通道
+	electTimesUp        chan bool
+	receivedHeartBeat   chan bool
+	receivedRequestVote chan bool
+
+	//candidate channels
+	voteForSelf  chan bool
+	becomeLeader chan bool
 }
 
 // return currentTerm and whether this server
@@ -91,6 +98,10 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	term = rf.currentTerm
+	if rf.role == ROLE_LEADER {
+		isleader = true
+	}
 	return term, isleader
 }
 
@@ -154,6 +165,20 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
+type AppendEntriesArgs struct {
+	Term              int //当前 term
+	LeaderId          int
+	PrevLogIndex      int //
+	PrevLogTerm       int
+	Entries           []interface{}
+	LeaderCommitIndex int
+}
+
+type AppendEntriesReply struct {
+	Term    int
+	Success bool
+}
+
 //
 // example RequestVote RPC handler.
 //
@@ -165,6 +190,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if (rf.votedFor == 0 || rf.votedFor == args.CandidateId) &&
 		(args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
 		reply.VoteGranted = true
+	}
+
+	return
+}
+
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+
+	if args.Entries == nil {
+		rf.receivedHeartBeat <- true
 	}
 
 	return
@@ -201,6 +235,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 //
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	return ok
+}
+
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
 }
 
@@ -249,6 +288,43 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
+func (rf *Raft) electTimeDetect() {
+	if rf.lastTimeHeardFromLeader.Add(rf.electTimePeriod).Before(time.Now()) {
+		rf.electTimesUp <- true
+		rf.voteForSelf <- true
+	}
+}
+
+//发送心跳包给所有人除了自己
+func (rf *Raft) sendHeartBeats() {
+	for i, _ := range rf.peers {
+		args := AppendEntriesArgs{}
+		args.Term = rf.currentTerm
+		args.LeaderId = rf.me
+
+		reply := AppendEntriesReply{}
+		rf.sendAppendEntries(i, &args, &reply)
+	}
+}
+
+//发送RV给所有人除了自己
+func (rf *Raft) askForVotes() {
+	voteCount := 0
+	for i, _ := range rf.peers {
+		args := RequestVoteArgs{}
+		args.Term = rf.currentTerm
+
+		reply := RequestVoteReply{}
+		rf.sendRequestVote(i, &args, &reply)
+		if reply.VoteGranted == true {
+			voteCount++
+		}
+	}
+	if voteCount > len(rf.peers)/2 {
+		rf.becomeLeader <- true
+	}
+}
+
 //
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -266,40 +342,52 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	rf.electTimePeriod = time.Duration(rand.Int63()%333+550) * time.Millisecond
 
 	// Your initialization code here (2A, 2B, 2C).
-
-	//事件循环模型 , 每个角色会触发的事件和需要执行的逻辑
+	//定时事件触发线程    (在 rpc handler 里也会触发事件,小心并发race)
 	go func() {
-		//如果是leader的话,需要定期发心跳包
-		// 如果是follower , 比对lastTimeHeardFromLeader ,  如果超时则转变角色为candidate
+		switch rf.role {
+		case ROLE_FOLLOWER:
+			rf.electTimeDetect()
+		case ROLE_LEADER:
+			rf.sendHeartBeats()
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}()
+
+	//事件循环模型线程 , 每个角色的事件需要执行的逻辑
+	go func() {
 		// 是candidate , 需要发送RV , 并判断自己是否成为了leader ,
 		for {
 
 			switch rf.role {
 			case ROLE_FOLLOWER:
 				select {
-				case <-electTimesUp:
+				case <-rf.electTimesUp:
 					//选举超时,变成 candidate
 					rf.role = ROLE_CANDIDATE
-				case <-receivedHeartBeat:
+				case <-rf.receivedHeartBeat:
 					//收到心跳包,重置选举超时时间
 					rf.lastTimeHeardFromLeader = time.Now()
-				case <-receivedRequestVote:
-					//判断是否投票
 				}
+
 			case ROLE_CANDIDATE:
 				select {
-				case <-voteForSelf:
-				//给自己投票和汇集选票
+				case <-rf.voteForSelf:
+					//给自己投票和汇集选票
+					rf.votedFor = me
+					rf.askForVotes()
 				case <-electTimesUp:
 				//超时,开始新一轮选举
 				case <-receivedHeartBeat:
 				//变成 follower
-				case <-becomeLeader:
-					//变成 leader
+				case <-rf.becomeLeader:
+					rf.role = ROLE_LEADER
 
 				}
+
 			case ROLE_LEADER:
 				select {
 				case <-heartBeatTimesUp:
