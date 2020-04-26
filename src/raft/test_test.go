@@ -59,14 +59,20 @@ func TestReElection2A(t *testing.T) {
 
 	leader1 := cfg.checkOneLeader()
 
+	DPrintf("网络正常情况通过")
+
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
+
+	DPrintf("断开leader1测试通过")
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader.
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
+
+	DPrintf("leader1重新加入测试通过")
 
 	// if there's no quorum, no leader should
 	// be elected.
@@ -75,13 +81,19 @@ func TestReElection2A(t *testing.T) {
 	time.Sleep(2 * RaftElectionTimeout)
 	cfg.checkNoLeader()
 
+	DPrintf("peers数不足,无法形成leader测试通过")
+
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
 	cfg.checkOneLeader()
 
+	DPrintf("重新加入,peer足够,生成一个leader通过")
+
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
 	cfg.checkOneLeader()
+
+	DPrintf("已有leader的情况下,再重连一个本来是leader的peer,不影响新leader 测试通过")
 
 	cfg.end()
 }
