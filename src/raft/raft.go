@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -83,12 +84,15 @@ type Raft struct {
 
 	//follower channels , 当做接收事件的通道
 	electTimesUp        chan bool
-	receivedHeartBeat   chan bool
+	receivedHeartBeat   chan AppendEntriesArgs
 	receivedRequestVote chan bool
 
 	//candidate channels
-	voteForSelf  chan bool
-	becomeLeader chan bool
+	voteForSelf     chan bool
+	becomeLeader    chan bool
+	voteBeGranted   chan RequestVoteArgs
+	rvReqsReceived  chan RequestVoteArgs
+	rvReplyReceived chan RequestVoteReply
 }
 
 // return currentTerm and whether this server
@@ -184,13 +188,14 @@ type AppendEntriesReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
-	if args.Term < rf.currentTerm {
-		reply.VoteGranted = false
-	}
-	if (rf.votedFor == 0 || rf.votedFor == args.CandidateId) &&
-		(args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
-		reply.VoteGranted = true
-	}
+
+	rf.rvReqsReceived <- *args
+
+	var tmpReply RequestVoteReply = <-rf.rvReplyReceived
+	DPrintf("收到投票结果")
+	DPrintf(fmt.Sprint(tmpReply))
+	reply.VoteGranted = tmpReply.VoteGranted
+	//reply.Term = tmpReply.Term
 
 	return
 }
@@ -198,7 +203,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
 	if args.Entries == nil {
-		rf.receivedHeartBeat <- true
+		rf.receivedHeartBeat <- *args
 	}
 
 	return
@@ -289,7 +294,11 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) electTimeDetect() {
+	//DPrintf("检测超时时间")
+	//DPrintf(rf.electTimePeriod.String())
+	//DPrintf(rf.lastTimeHeard.String())
 	if rf.lastTimeHeard.Add(rf.electTimePeriod).Before(time.Now()) {
+
 		rf.electTimesUp <- true
 		rf.voteForSelf <- true
 	}
@@ -298,6 +307,9 @@ func (rf *Raft) electTimeDetect() {
 //发送心跳包给所有人除了自己
 func (rf *Raft) sendHeartBeats() {
 	for i, _ := range rf.peers {
+		if i == rf.me {
+			continue
+		}
 		args := AppendEntriesArgs{}
 		args.Term = rf.currentTerm
 		args.LeaderId = rf.me
@@ -309,17 +321,29 @@ func (rf *Raft) sendHeartBeats() {
 
 //发送RV给所有人除了自己
 func (rf *Raft) askForVotes() {
+
 	voteCount := 1
+	DPrintf("给自己投票")
 	for i, _ := range rf.peers {
+		if i == rf.me && rf.peers[i] != nil {
+			continue
+		}
 		args := RequestVoteArgs{}
 		args.Term = rf.currentTerm
+		args.CandidateId = rf.me
 
 		reply := RequestVoteReply{}
-		rf.sendRequestVote(i, &args, &reply)
+		ok := rf.sendRequestVote(i, &args, &reply)
+		DPrintf(fmt.Sprint(ok))
+		if !ok {
+			continue
+		}
 		if reply.VoteGranted == true {
 			voteCount++
 		}
 	}
+	DPrintf("投票结果")
+	DPrintf(fmt.Sprint(voteCount))
 	if voteCount > len(rf.peers)/2 {
 		rf.becomeLeader <- true
 	}
@@ -343,19 +367,49 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.me = me
 	rf.electTimePeriod = time.Duration(rand.Int63()%333+550) * time.Millisecond
+	rf.lastTimeHeard = time.Now()
+	rf.role = ROLE_FOLLOWER
+	rf.votedFor = -1
+
+	rf.electTimesUp = make(chan bool, 50)
+
+	rf.receivedHeartBeat = make(chan AppendEntriesArgs, 50)
+	rf.receivedRequestVote = make(chan bool, 50)
+	rf.voteForSelf = make(chan bool, 50)
+	rf.becomeLeader = make(chan bool, 50)
+	rf.voteBeGranted = make(chan RequestVoteArgs, 50)
+	rf.rvReqsReceived = make(chan RequestVoteArgs, 50)
+
+	rf.rvReplyReceived = make(chan RequestVoteReply)
+
+	DPrintf("创建peer")
 
 	// Your initialization code here (2A, 2B, 2C).
 	//定时事件触发线程    (在 rpc handler 里也会触发事件,小心并发race) ,
 	// 如果我把所有 race 的逻辑通过推事件的形式执行,是不是就不用 lock 了
 	go func() {
-		switch rf.role {
-		case ROLE_FOLLOWER:
-			rf.electTimeDetect()
-		case ROLE_LEADER:
-			rf.sendHeartBeats()
-		}
+		for {
 
-		time.Sleep(50 * time.Millisecond)
+			switch rf.role {
+
+			case ROLE_LEADER:
+				rf.sendHeartBeats()
+			}
+
+			time.Sleep(1 * time.Millisecond)
+		}
+	}()
+
+	go func() {
+		for {
+
+			switch rf.role {
+			case ROLE_FOLLOWER:
+				rf.electTimeDetect()
+			}
+
+			time.Sleep(1 * time.Millisecond)
+		}
 	}()
 
 	//事件循环模型线程 , 每个角色的事件需要执行的逻辑
@@ -377,13 +431,40 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//心跳和投票都会重置选举时间
 			//选举超时投票
 			case ROLE_FOLLOWER:
+				//DPrintf("follower 事件循环")
+				//DPrintf(string(len(rf.electTimesUp)))
 				select {
-				case <-rf.electTimesUp:
-					//选举超时,变成 candidate
-					rf.role = ROLE_CANDIDATE
-				case <-rf.receivedHeartBeat:
+
+				case args := <-rf.receivedHeartBeat:
 					//收到心跳包,重置选举超时时间
+					//DPrintf("收到心跳包")
 					rf.lastTimeHeard = time.Now()
+					rf.currentTerm = args.Term
+					rf.votedFor = -1
+
+				case args := <-rf.rvReqsReceived:
+					rf.lastTimeHeard = time.Now()
+					DPrintf("重置超时")
+					var reply = RequestVoteReply{}
+					reply.Term = args.Term
+					if args.Term < rf.currentTerm {
+						reply.VoteGranted = false
+					}
+					DPrintf(fmt.Sprint(rf.votedFor))
+					if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
+						(args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
+						reply.VoteGranted = true
+
+						rf.votedFor = args.CandidateId
+						rf.currentTerm = args.Term
+					}
+					rf.rvReplyReceived <- reply
+				case <-rf.electTimesUp:
+					DPrintf("已超时")
+					//选举超时,变成 candidate
+					DPrintf(fmt.Sprint(rf.me))
+					DPrintf("变成c")
+					rf.role = ROLE_CANDIDATE
 				}
 
 				//currentTerm++ , vote++ , reset elect time , 汇集选票
@@ -391,6 +472,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				//收到心跳包 / AE RPC, 变成 follower
 				//超时 , 开始新一轮
 			case ROLE_CANDIDATE:
+				DPrintf("candidate 事件循环")
 				select {
 				case <-rf.voteForSelf:
 					//给自己投票和汇集选票
@@ -404,7 +486,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					//变成 follower
 					rf.role = ROLE_FOLLOWER
 				case <-rf.becomeLeader:
+					//变成leader
+					DPrintf("变成leader")
 					rf.role = ROLE_LEADER
+					rf.sendHeartBeats()
 
 				}
 
@@ -414,7 +499,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				select {}
 			}
 
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(1 * time.Millisecond)
 		}
 
 	}()
