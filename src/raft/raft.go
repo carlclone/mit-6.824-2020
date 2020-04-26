@@ -95,6 +95,7 @@ type Raft struct {
 	rvReqsReceived     chan RequestVoteArgs
 	rvReplyReceived    chan RequestVoteReply
 	termLessThanOthers chan int
+	voteCount          int
 }
 
 // return currentTerm and whether this server
@@ -248,6 +249,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 //
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+
+	if ok {
+		if reply.VoteGranted {
+			rf.voteCount++
+			if rf.role == ROLE_CANDIDATE && rf.voteCount > len(rf.peers)/2 {
+				rf.role = ROLE_FOLLOWER
+				rf.becomeLeader <- true
+			}
+		}
+	}
 	return ok
 }
 
@@ -330,7 +341,6 @@ func (rf *Raft) sendHeartBeats() {
 //发送RV给所有人除了自己
 func (rf *Raft) askForVotes() {
 
-	voteCount := 1
 	DPrintf("给自己投票")
 	for i, _ := range rf.peers {
 		if i == rf.me {
@@ -341,24 +351,24 @@ func (rf *Raft) askForVotes() {
 		args.CandidateId = rf.me
 
 		reply := RequestVoteReply{}
-		ok := rf.sendRequestVote(i, &args, &reply)
-		var word string
-		if ok {
-			word = "成功"
-		} else {
-			word = "失败"
-		}
-		DPrintf("发送请求结果:" + strconv.Itoa(i) + word)
-		if !ok {
-			continue
-		}
-		if reply.VoteGranted == true {
-			voteCount++
-		}
-	}
-	DPrintf("投票结果" + strconv.Itoa(voteCount))
-	if voteCount > len(rf.peers)/2 {
-		rf.becomeLeader <- true
+		//DPrintf("开始发出投票请求")
+		//ok := rf.sendRequestVote(i, &args, &reply)
+		go func(i int) {
+			//var reply RequestVoteReply
+			//fmt.Printf("%v RequestVote to %v\n",rf.me,i)
+			rf.sendRequestVote(i, &args, &reply)
+		}(i)
+		//DPrintf("发出投票请求结束")
+		//var word string
+		//if ok {
+		//	word = "成功"
+		//} else {
+		//	word = "失败"
+		//}
+		//DPrintf("发送请求结果:" + strconv.Itoa(i) + word)
+		//if !ok {
+		//	continue
+		//}
 	}
 }
 
@@ -379,7 +389,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
-	rf.electTimePeriod = time.Duration(rand.Int63()%400+250) * time.Millisecond
+	rf.electTimePeriod = time.Duration(rand.Int63()%1000+250) * time.Millisecond
 	rf.lastTimeHeard = time.Now()
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
@@ -410,7 +420,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.sendHeartBeats()
 			}
 
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
 	}()
 
@@ -422,7 +432,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.electTimeDetect()
 			}
 
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
@@ -457,9 +467,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				select {
 				case <-rf.voteForSelf:
 					//给自己投票和汇集选票
+					DPrintf(rf.lastTimeHeard.Add(rf.electTimePeriod).String())
+					rf.lastTimeHeard = time.Now()
 					rf.currentTerm++
 					rf.votedFor = me
-					rf.askForVotes()
+					go rf.askForVotes()
 				case <-rf.electTimesUp:
 					//超时,开始新一轮选举
 					rf.voteForSelf <- true
@@ -480,7 +492,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 			}
 
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 
 	}()
@@ -519,7 +531,7 @@ func handleFVoteReqs(rf *Raft, args RequestVoteArgs) {
 }
 
 func handleFReceivedHeartBeat(rf *Raft, args AppendEntriesArgs) {
-	//DPrintf("收到心跳包")
+	DPrintf("收到心跳包")
 	rf.lastTimeHeard = time.Now()
 	rf.currentTerm = args.Term
 	rf.votedFor = -1
