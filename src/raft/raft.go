@@ -20,6 +20,7 @@ package raft
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -88,11 +89,12 @@ type Raft struct {
 	receivedRequestVote chan bool
 
 	//candidate channels
-	voteForSelf     chan bool
-	becomeLeader    chan bool
-	voteBeGranted   chan RequestVoteArgs
-	rvReqsReceived  chan RequestVoteArgs
-	rvReplyReceived chan RequestVoteReply
+	voteForSelf        chan bool
+	becomeLeader       chan bool
+	voteBeGranted      chan RequestVoteArgs
+	rvReqsReceived     chan RequestVoteArgs
+	rvReplyReceived    chan RequestVoteReply
+	termLessThanOthers chan int
 }
 
 // return currentTerm and whether this server
@@ -192,8 +194,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.rvReqsReceived <- *args
 
 	var tmpReply RequestVoteReply = <-rf.rvReplyReceived
-	DPrintf("收到投票结果")
+	DPrintf("RequestVote")
 	DPrintf(fmt.Sprint(tmpReply))
+	DPrintf(strconv.Itoa(len(rf.peers)))
 	reply.VoteGranted = tmpReply.VoteGranted
 	//reply.Term = tmpReply.Term
 
@@ -204,6 +207,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.Entries == nil {
 		rf.receivedHeartBeat <- *args
+
+		//if args.Term > rf.currentTerm {
+		//	rf.termLessThanOthers <- args.Term
+		//}
+
 	}
 
 	return
@@ -325,7 +333,7 @@ func (rf *Raft) askForVotes() {
 	voteCount := 1
 	DPrintf("给自己投票")
 	for i, _ := range rf.peers {
-		if i == rf.me && rf.peers[i] != nil {
+		if i == rf.me {
 			continue
 		}
 		args := RequestVoteArgs{}
@@ -334,7 +342,13 @@ func (rf *Raft) askForVotes() {
 
 		reply := RequestVoteReply{}
 		ok := rf.sendRequestVote(i, &args, &reply)
-		DPrintf(fmt.Sprint(ok))
+		var word string
+		if ok {
+			word = "成功"
+		} else {
+			word = "失败"
+		}
+		DPrintf("发送请求结果:" + strconv.Itoa(i) + word)
 		if !ok {
 			continue
 		}
@@ -342,8 +356,7 @@ func (rf *Raft) askForVotes() {
 			voteCount++
 		}
 	}
-	DPrintf("投票结果")
-	DPrintf(fmt.Sprint(voteCount))
+	DPrintf("投票结果" + strconv.Itoa(voteCount))
 	if voteCount > len(rf.peers)/2 {
 		rf.becomeLeader <- true
 	}
@@ -366,7 +379,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
-	rf.electTimePeriod = time.Duration(rand.Int63()%333+550) * time.Millisecond
+	rf.electTimePeriod = time.Duration(rand.Int63()%400+250) * time.Millisecond
 	rf.lastTimeHeard = time.Now()
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
@@ -379,6 +392,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.becomeLeader = make(chan bool, 50)
 	rf.voteBeGranted = make(chan RequestVoteArgs, 50)
 	rf.rvReqsReceived = make(chan RequestVoteArgs, 50)
+	rf.termLessThanOthers = make(chan int, 50)
 
 	rf.rvReplyReceived = make(chan RequestVoteReply)
 
@@ -419,13 +433,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 			//再检查一下 figure2 里的两个 RPC
 
-			//所有角色共同事件
-			//select {
-			//case <-rf.termLessThanOthers:
-			//	rf.role = ROLE_FOLLOWER
-			//
-			//}
-
 			switch rf.role {
 			//回应 c 的投票请求(要修改 voteFor) , l 的心跳请求
 			//心跳和投票都会重置选举时间
@@ -437,6 +444,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 				case args := <-rf.receivedHeartBeat:
 					//收到心跳包,重置选举超时时间
+
 					//DPrintf("收到心跳包")
 					rf.lastTimeHeard = time.Now()
 					rf.currentTerm = args.Term
@@ -450,9 +458,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					if args.Term < rf.currentTerm {
 						reply.VoteGranted = false
 					}
-					DPrintf(fmt.Sprint(rf.votedFor))
-					if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
-						(args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
+					DPrintf(fmt.Sprint("voteFor:" + strconv.Itoa(rf.votedFor)))
+					if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+						//&& (args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
 						reply.VoteGranted = true
 
 						rf.votedFor = args.CandidateId
@@ -460,9 +468,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					}
 					rf.rvReplyReceived <- reply
 				case <-rf.electTimesUp:
-					DPrintf("已超时")
+					DPrintf("已超时" + strconv.Itoa(rf.me))
 					//选举超时,变成 candidate
-					DPrintf(fmt.Sprint(rf.me))
+					//DPrintf(fmt.Sprint(rf.me))
 					DPrintf("变成c")
 					rf.role = ROLE_CANDIDATE
 				}
@@ -494,10 +502,21 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 
 				//定期发心跳包
-				//
+				//如果leader断开重连 , 收到了心跳包,则变成follower
 			case ROLE_LEADER:
-				select {}
+				//select {
+				//case term:=<-rf.termLessThanOthers:
+				//		rf.role = ROLE_FOLLOWER
+				//		rf.currentTerm = term
+				//}
 			}
+
+			//所有角色共同事件
+			//select {
+			//case term:=<-rf.termLessThanOthers:
+			//	rf.role = ROLE_FOLLOWER
+			//	rf.currentTerm = term
+			//}
 
 			time.Sleep(1 * time.Millisecond)
 		}
