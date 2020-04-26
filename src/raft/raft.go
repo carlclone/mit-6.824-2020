@@ -77,9 +77,9 @@ type Raft struct {
 	//volatile / only leader
 
 	//other
-	lastTimeHeardFromLeader time.Time
-	role                    int
-	electTimePeriod         time.Duration
+	lastTimeHeard   time.Time
+	role            int
+	electTimePeriod time.Duration
 
 	//follower channels , 当做接收事件的通道
 	electTimesUp        chan bool
@@ -289,7 +289,7 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) electTimeDetect() {
-	if rf.lastTimeHeardFromLeader.Add(rf.electTimePeriod).Before(time.Now()) {
+	if rf.lastTimeHeard.Add(rf.electTimePeriod).Before(time.Now()) {
 		rf.electTimesUp <- true
 		rf.voteForSelf <- true
 	}
@@ -366,11 +366,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//再检查一下 figure2 里的两个 RPC
 
 			//所有角色共同事件
-			select {
-			case <-rf.termLessThanOthers:
-				rf.role = ROLE_FOLLOWER
-
-			}
+			//select {
+			//case <-rf.termLessThanOthers:
+			//	rf.role = ROLE_FOLLOWER
+			//
+			//}
 
 			switch rf.role {
 			//回应 c 的投票请求(要修改 voteFor) , l 的心跳请求
@@ -383,7 +383,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.role = ROLE_CANDIDATE
 				case <-rf.receivedHeartBeat:
 					//收到心跳包,重置选举超时时间
-					rf.lastTimeHeardFromLeader = time.Now()
+					rf.lastTimeHeard = time.Now()
 				}
 
 				//currentTerm++ , vote++ , reset elect time , 汇集选票
