@@ -438,49 +438,22 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//心跳和投票都会重置选举时间
 			//选举超时投票
 			case ROLE_FOLLOWER:
-				//DPrintf("follower 事件循环")
-				//DPrintf(string(len(rf.electTimesUp)))
 				select {
 
 				case args := <-rf.receivedHeartBeat:
 					//收到心跳包,重置选举超时时间
-
-					//DPrintf("收到心跳包")
-					rf.lastTimeHeard = time.Now()
-					rf.currentTerm = args.Term
-					rf.votedFor = -1
-
+					handleFReceivedHeartBeat(rf, args)
 				case args := <-rf.rvReqsReceived:
-					rf.lastTimeHeard = time.Now()
-					DPrintf("重置超时")
-					var reply = RequestVoteReply{}
-					reply.Term = args.Term
-					if args.Term < rf.currentTerm {
-						reply.VoteGranted = false
-					}
-					DPrintf(fmt.Sprint("voteFor:" + strconv.Itoa(rf.votedFor)))
-					if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
-						//&& (args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
-						reply.VoteGranted = true
-
-						rf.votedFor = args.CandidateId
-						rf.currentTerm = args.Term
-					}
-					rf.rvReplyReceived <- reply
+					handleFVoteReqs(rf, args)
 				case <-rf.electTimesUp:
-					DPrintf("已超时" + strconv.Itoa(rf.me))
-					//选举超时,变成 candidate
-					//DPrintf(fmt.Sprint(rf.me))
-					DPrintf("变成c")
-					rf.role = ROLE_CANDIDATE
+					handleFElectTimeUp(rf)
 				}
 
-				//currentTerm++ , vote++ , reset elect time , 汇集选票
-				//获得大多数 , 成为 leader
-				//收到心跳包 / AE RPC, 变成 follower
-				//超时 , 开始新一轮
+			//currentTerm++ , vote++ , reset elect time , 汇集选票
+			//获得大多数 , 成为 leader
+			//收到心跳包 / AE RPC, 变成 follower
+			//超时 , 开始新一轮
 			case ROLE_CANDIDATE:
-				DPrintf("candidate 事件循环")
 				select {
 				case <-rf.voteForSelf:
 					//给自己投票和汇集选票
@@ -504,19 +477,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				//定期发心跳包
 				//如果leader断开重连 , 收到了心跳包,则变成follower
 			case ROLE_LEADER:
-				//select {
-				//case term:=<-rf.termLessThanOthers:
-				//		rf.role = ROLE_FOLLOWER
-				//		rf.currentTerm = term
-				//}
-			}
 
-			//所有角色共同事件
-			//select {
-			//case term:=<-rf.termLessThanOthers:
-			//	rf.role = ROLE_FOLLOWER
-			//	rf.currentTerm = term
-			//}
+			}
 
 			time.Sleep(1 * time.Millisecond)
 		}
@@ -527,4 +489,38 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	return rf
+}
+
+func handleFElectTimeUp(rf *Raft) {
+	DPrintf("已超时" + strconv.Itoa(rf.me))
+	//选举超时,变成 candidate
+	//DPrintf(fmt.Sprint(rf.me))
+	DPrintf("变成c")
+	rf.role = ROLE_CANDIDATE
+}
+
+func handleFVoteReqs(rf *Raft, args RequestVoteArgs) {
+	rf.lastTimeHeard = time.Now()
+	DPrintf("重置超时")
+	var reply = RequestVoteReply{}
+	reply.Term = args.Term
+	if args.Term < rf.currentTerm {
+		reply.VoteGranted = false
+	}
+	DPrintf(fmt.Sprint("voteFor:" + strconv.Itoa(rf.votedFor)))
+	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+		//&& (args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
+		reply.VoteGranted = true
+
+		rf.votedFor = args.CandidateId
+		rf.currentTerm = args.Term
+	}
+	rf.rvReplyReceived <- reply
+}
+
+func handleFReceivedHeartBeat(rf *Raft, args AppendEntriesArgs) {
+	//DPrintf("收到心跳包")
+	rf.lastTimeHeard = time.Now()
+	rf.currentTerm = args.Term
+	rf.votedFor = -1
 }
