@@ -135,6 +135,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
+		rf.votedFor = -1
 		rf.mu.Unlock()
 	}
 
@@ -236,7 +237,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					DPrintf("%v follower超时->candidate ", rf.me)
 					rf.mu.Lock()
 					rf.role = ROLE_CANDIDATE
-					rf.votedFor = -1
 					rf.mu.Unlock()
 				}
 
