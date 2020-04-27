@@ -196,7 +196,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	var tmpReply RequestVoteReply = <-rf.rvReplyReceived
 	DPrintf("RequestVote")
 	DPrintf(fmt.Sprint(tmpReply))
-	DPrintf(strconv.Itoa(len(rf.peers)))
+	//DPrintf(strconv.Itoa(len(rf.peers)))
 	reply.VoteGranted = tmpReply.VoteGranted
 	//reply.Term = tmpReply.Term
 
@@ -426,7 +426,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				select {
 				case <-rf.voteForSelf:
 					//给自己投票和汇集选票
-					DPrintf(rf.lastTimeHeard.Add(rf.electTimePeriod).String())
+					//DPrintf(rf.lastTimeHeard.Add(rf.electTimePeriod).String())
 					rf.lastTimeHeard = time.Now()
 					rf.currentTerm++
 					rf.votedFor = me
