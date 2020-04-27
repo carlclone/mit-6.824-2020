@@ -18,9 +18,7 @@ package raft
 //
 
 import (
-	"fmt"
 	"math/rand"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -29,6 +27,12 @@ import "../labrpc"
 
 // import "bytes"
 // import "../labgob"
+
+const (
+	ROLE_FOLLOWER  = 1
+	ROLE_CANDIDATE = 2
+	ROLE_LEADER    = 3
+)
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -47,12 +51,6 @@ type ApplyMsg struct {
 	CommandIndex int
 }
 
-const (
-	ROLE_FOLLOWER  = 1
-	ROLE_CANDIDATE = 2
-	ROLE_LEADER    = 3
-)
-
 //
 // A Go object implementing a single Raft peer.
 //
@@ -70,7 +68,7 @@ type Raft struct {
 	//persistent
 	currentTerm int
 	votedFor    int
-	//log         []*LogEntry
+	log         []interface{}
 
 	//volatile
 	commitIndex int
@@ -79,21 +77,148 @@ type Raft struct {
 	//volatile / only leader
 
 	//other
-	role            int
-	electTimePeriod time.Duration
+	role                 int
+	voteCount            int
+	receiveAppendEntries chan bool
+	receiveVoteReqs      chan bool
+}
 
-	//follower channels , 当做接收事件的通道
-	receivedHeartBeat   chan AppendEntriesArgs
-	receivedRequestVote chan bool
+type AppendEntriesArgs struct {
+	Term              int //当前 term
+	LeaderId          int
+	PrevLogIndex      int //
+	PrevLogTerm       int
+	Entries           []interface{}
+	LeaderCommitIndex int
+}
 
-	//candidate channels
-	becomeLeader       chan bool
-	voteBeGranted      chan RequestVoteArgs
-	rvReqsReceived     chan RequestVoteArgs
-	rvReplyReceived    chan RequestVoteReply
-	termLessThanOthers chan int
-	voteCount          int
-	voteForSelf        chan bool
+type AppendEntriesReply struct {
+	Term    int
+	Success bool
+}
+
+//处理请求
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+
+	rf.receiveAppendEntries <- true
+
+	reply.Success = false
+	// 1
+	if args.Term < rf.currentTerm {
+		return
+	}
+
+	//rules for all server (reqs and response)
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		rf.role = ROLE_FOLLOWER
+	}
+
+	return
+}
+
+//
+// 处理请求
+//
+func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	// Your code here (2A, 2B).
+
+	rf.receiveVoteReqs <- true
+
+	//1
+	if args.Term < rf.currentTerm {
+		return
+	}
+
+	//rules for all server (reqs and response)
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		rf.role = ROLE_FOLLOWER
+	}
+
+	//2 前半句
+	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+		reply.VoteGranted = true
+	}
+
+}
+
+//发送请求
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+
+	//rules for all server (reqs and response)
+	if reply.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		rf.role = ROLE_FOLLOWER
+	}
+
+	return ok
+}
+
+type RequestVoteArgs struct {
+	// Your data here (2A, 2B).
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
+}
+
+type RequestVoteReply struct {
+	// Your data here (2A).
+	Term        int
+	VoteGranted bool
+}
+
+// 发送请求
+// example code to send a RequestVote RPC to a server.
+// server is the index of the target server in rf.peers[].
+// expects RPC arguments in args.
+// fills in *reply with RPC reply, so caller should
+// pass &reply.
+// the types of the args and reply passed to Call() must be
+// the same as the types of the arguments declared in the
+// handler function (including whether they are pointers).
+//
+// The labrpc package simulates a lossy network, in which servers
+// may be unreachable, and in which requests and replies may be lost.
+// Call() sends a request and waits for a reply. If a reply arrives
+// within a timeout interval, Call() returns true; otherwise
+// Call() returns false. Thus Call() may not return for a while.
+// A false return can be caused by a dead server, a live server that
+// can't be reached, a lost request, or a lost reply.
+//
+// Call() is guaranteed to return (perhaps after a delay) *except* if the
+// handler function on the server side does not return.  Thus there
+// is no need to implement your own timeouts around Call().
+//
+// look at the comments in ../labrpc/labrpc.go for more details.
+//
+// if you're having trouble getting RPC to work, check that you've
+// capitalized all field names in structs passed over RPC, and
+// that the caller passes the address of the reply struct with &, not
+// the struct itself.
+//
+func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+
+	//rules for all server (reqs and response)
+	if reply.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		rf.role = ROLE_FOLLOWER
+	}
+
+	if ok {
+
+		if reply.VoteGranted {
+			rf.mu.Lock()
+			rf.voteCount++
+			rf.mu.Unlock()
+		}
+
+	}
+
+	return ok
 }
 
 // return currentTerm and whether this server
@@ -103,10 +228,6 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
-	term = rf.currentTerm
-	if rf.role == ROLE_LEADER {
-		isleader = true
-	}
 	return term, isleader
 }
 
@@ -146,121 +267,6 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
-}
-
-//
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-//
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-	Term         int
-	CandidateId  int
-	LastLogIndex int
-	LastLogTerm  int
-}
-
-//
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-//
-type RequestVoteReply struct {
-	// Your data here (2A).
-	Term        int
-	VoteGranted bool
-}
-
-type AppendEntriesArgs struct {
-	Term              int //当前 term
-	LeaderId          int
-	PrevLogIndex      int //
-	PrevLogTerm       int
-	Entries           []interface{}
-	LeaderCommitIndex int
-}
-
-type AppendEntriesReply struct {
-	Term    int
-	Success bool
-}
-
-//
-// example RequestVote RPC handler.
-//
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
-
-	rf.rvReqsReceived <- *args
-
-	var tmpReply RequestVoteReply = <-rf.rvReplyReceived
-
-	DPrintf("RequestVote")
-	DPrintf(fmt.Sprint(tmpReply))
-
-	reply.VoteGranted = tmpReply.VoteGranted
-
-	return
-}
-
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-
-	if args.Entries == nil {
-		rf.receivedHeartBeat <- *args
-	}
-
-	return
-}
-
-//
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
-//
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-
-	if ok {
-		if reply.VoteGranted {
-			rf.mu.Lock()
-			rf.voteCount++
-			rf.mu.Unlock()
-			DPrintf("投票结果" + strconv.Itoa(rf.voteCount))
-			if rf.role == ROLE_CANDIDATE && rf.voteCount > len(rf.peers)/2 {
-				rf.role = ROLE_LEADER
-				rf.becomeLeader <- true
-			}
-		}
-	}
-	return ok
-}
-
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	return ok
 }
 
 //
@@ -308,38 +314,6 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-//发送心跳包给所有人除了自己
-func (rf *Raft) sendHeartBeats() {
-	for i, _ := range rf.peers {
-		if i == rf.me {
-			continue
-		}
-		args := AppendEntriesArgs{}
-		args.Term = rf.currentTerm
-		args.LeaderId = rf.me
-
-		reply := AppendEntriesReply{}
-		rf.sendAppendEntries(i, &args, &reply)
-	}
-}
-
-func (rf *Raft) askForVotes() {
-
-	DPrintf("群发投票")
-	args := RequestVoteArgs{}
-	args.Term = rf.currentTerm
-	args.CandidateId = rf.me
-	reply := RequestVoteReply{}
-
-	for i, _ := range rf.peers {
-		if i != rf.me && rf.role == ROLE_CANDIDATE {
-			go func(i int) {
-				rf.sendRequestVote(i, &args, &reply)
-			}(i)
-		}
-	}
-}
-
 //
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -357,164 +331,67 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
-	rf.electTimePeriod = time.Duration(rand.Int63()%300+200) * time.Millisecond
-	rf.role = ROLE_FOLLOWER
-	rf.votedFor = -1
 
-	rf.receivedHeartBeat = make(chan AppendEntriesArgs, 50)
-	rf.receivedRequestVote = make(chan bool, 50)
-	rf.becomeLeader = make(chan bool, 50)
-	rf.voteBeGranted = make(chan RequestVoteArgs, 50)
-	rf.rvReqsReceived = make(chan RequestVoteArgs, 50)
-	rf.termLessThanOthers = make(chan int, 50)
-	rf.voteForSelf = make(chan bool, 50)
-
-	rf.rvReplyReceived = make(chan RequestVoteReply)
-
-	DPrintf("创建peer")
+	rf.receiveAppendEntries = make(chan bool, 50)
+	rf.receiveVoteReqs = make(chan bool, 50)
 
 	// Your initialization code here (2A, 2B, 2C).
-	//定时事件触发线程    (在 rpc handler 里也会触发事件,小心并发race) ,
-	// 如果我把所有 race 的逻辑通过推事件的形式执行,是不是就不用 lock 了
-	go func() {
-		for {
-
-			switch rf.role {
-
-			case ROLE_LEADER:
-				rf.sendHeartBeats()
-			}
-
-			time.Sleep(50 * time.Millisecond)
-		}
-	}()
-
-	//事件循环模型线程 , 每个角色的事件需要执行的逻辑
-	go func() {
-		// 是candidate , 需要发送RV , 并判断自己是否成为了leader ,
-		for {
-
-			//再检查一下 figure2 里的两个 RPC
-
-			switch rf.role {
-			//回应 c 的投票请求(要修改 voteFor) , l 的心跳请求
-			//心跳和投票都会重置选举时间
-			//选举超时投票
-			case ROLE_FOLLOWER:
-				select {
-
-				case args := <-rf.receivedHeartBeat:
-					//收到心跳包,重置选举超时时间
-					handleFReceivedHeartBeat(rf, args)
-					heartBeatGeneral(args, rf)
-				case args := <-rf.rvReqsReceived:
-					handleFVoteReqs(rf, args)
-					rvGeneral(args, rf)
-				case <-time.After(time.Duration(rand.Int63()%1000+100) * time.Millisecond):
-					DPrintf("已超时" + strconv.Itoa(rf.me))
-					DPrintf("变成candidate")
-					rf.role = ROLE_CANDIDATE
-					rf.voteForSelf <- true
-				}
-
-			//currentTerm++ , vote++ , reset elect time , 汇集选票
-			//获得大多数 , 成为 leader
-			//收到心跳包 / AE RPC, 变成 follower
-			//超时 , 开始新一轮
-			case ROLE_CANDIDATE:
-				select {
-				case <-rf.voteForSelf:
-					//给自己投票和汇集选票
-					rf.mu.Lock()
-					rf.currentTerm++
-					rf.votedFor = me
-					rf.voteCount = 1
-					rf.mu.Unlock()
-					go rf.askForVotes()
-
-				case <-time.After(time.Duration(rand.Int63()%1000+100) * time.Millisecond):
-					rf.voteForSelf <- true
-
-				case <-rf.becomeLeader:
-					//变成leader
-					DPrintf("变成leader")
-					rf.role = ROLE_LEADER
-					rf.sendHeartBeats()
-
-					/*处理rpc请求*/
-				case args := <-rf.receivedHeartBeat:
-					rf.role = ROLE_FOLLOWER
-					heartBeatGeneral(args, rf)
-				case args := <-rf.rvReqsReceived:
-					rvGeneral(args, rf)
-				}
-
-				//定期发心跳包
-				//如果leader断开重连 , 收到了心跳包,则变成follower
-			case ROLE_LEADER:
-				select {
-				/*处理rpc请求*/
-				case args := <-rf.receivedHeartBeat:
-					rf.role = ROLE_FOLLOWER
-					heartBeatGeneral(args, rf)
-				case args := <-rf.rvReqsReceived:
-					rvGeneral(args, rf)
-				}
-			}
-
-		}
-
-	}()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 	return rf
-}
 
-func rvGeneral(args RequestVoteArgs, rf *Raft) {
-	if args.Term > rf.currentTerm {
-		rf.role = ROLE_FOLLOWER
-		rf.currentTerm = args.Term
-		rf.votedFor = -1
-	}
-}
+	go func() {
 
-func heartBeatGeneral(args AppendEntriesArgs, rf *Raft) {
-	if args.Term > rf.currentTerm {
-		rf.role = ROLE_FOLLOWER
-		rf.currentTerm = args.Term
-		rf.votedFor = -1
-	}
-}
+		for {
+			switch rf.role {
+			case ROLE_FOLLOWER:
+				select {
+				case <-rf.receiveAppendEntries:
+				case <-rf.receiveVoteReqs:
+				case <-time.After(time.Duration(rand.Int63())%490 + 10):
+					rf.role = ROLE_CANDIDATE
+				}
 
-func handleFElectTimeUp(rf *Raft) {
-	DPrintf("已超时" + strconv.Itoa(rf.me))
-	DPrintf("变成c")
-	rf.role = ROLE_CANDIDATE
-	rf.voteForSelf <- true
-}
+			case ROLE_CANDIDATE:
+				rf.currentTerm++
+				rf.votedFor = me
+				rf.voteCount = 1
+				args := &RequestVoteArgs{
+					Term:        rf.currentTerm,
+					CandidateId: me,
+				}
 
-func handleFVoteReqs(rf *Raft, args RequestVoteArgs) {
-	DPrintf("重置超时")
-	var reply = RequestVoteReply{}
-	reply.Term = args.Term
-	if args.Term < rf.currentTerm {
-		reply.VoteGranted = false
-	}
-	DPrintf(fmt.Sprint("voteFor:" + strconv.Itoa(rf.votedFor)))
-	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
-		//&& (args.LastLogIndex == rf.commitIndex && args.LastLogTerm == rf.currentTerm) {
-		reply.VoteGranted = true
+				for i, _ := range rf.peers {
+					if i != rf.me {
+						reply := &RequestVoteReply{}
+						rf.sendRequestVote(i, args, reply)
+					}
+				}
+				if rf.voteCount > len(rf.peers)/2 {
+					rf.role = ROLE_LEADER
+				}
+				select {
+				case <-rf.receiveAppendEntries:
+					rf.role = ROLE_FOLLOWER
+				case <-time.After(time.Duration(rand.Int63())%490 + 10):
+				}
 
-		rf.votedFor = args.CandidateId
-		rf.currentTerm = args.Term
-	}
-	rf.rvReplyReceived <- reply
-}
+			case ROLE_LEADER:
+				args := &AppendEntriesArgs{
+					Term:     rf.currentTerm,
+					LeaderId: me,
+				}
 
-func handleFReceivedHeartBeat(rf *Raft, args AppendEntriesArgs) {
-	DPrintf("收到心跳包")
-	rf.currentTerm = args.Term
-	rf.votedFor = -1
+				for i, _ := range rf.peers {
+					if i != rf.me {
+						reply := &AppendEntriesReply{}
+						rf.sendAppendEntries(i, args, reply)
+					}
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+	}()
 }
