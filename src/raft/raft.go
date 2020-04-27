@@ -430,7 +430,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.votedFor = me
 					rf.voteCount = 1
 					rf.mu.Unlock()
-					rf.askForVotes()
+					go rf.askForVotes()
 
 				case <-time.After(time.Duration(rand.Int63()%1000+100) * time.Millisecond):
 					rf.voteForSelf <- true
