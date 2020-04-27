@@ -244,6 +244,10 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	if ok {
+		//防止前一个term的延迟投票响应污染了本次term
+		if reply.Term != rf.currentTerm {
+			return ok
+		}
 		if reply.VoteGranted {
 			rf.mu.Lock()
 			rf.voteCount++
