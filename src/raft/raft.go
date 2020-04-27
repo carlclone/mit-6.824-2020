@@ -329,7 +329,7 @@ func (rf *Raft) sendHeartBeats() {
 //发送RV给所有人除了自己
 func (rf *Raft) askForVotes() {
 
-	DPrintf("给自己投票")
+	DPrintf("群发投票")
 	for i, _ := range rf.peers {
 		if i == rf.me {
 			continue
@@ -339,24 +339,9 @@ func (rf *Raft) askForVotes() {
 		args.CandidateId = rf.me
 
 		reply := RequestVoteReply{}
-		//DPrintf("开始发出投票请求")
-		//ok := rf.sendRequestVote(i, &args, &reply)
 		go func(i int) {
-			//var reply RequestVoteReply
-			//fmt.Printf("%v RequestVote to %v\n",rf.me,i)
 			rf.sendRequestVote(i, &args, &reply)
 		}(i)
-		//DPrintf("发出投票请求结束")
-		//var word string
-		//if ok {
-		//	word = "成功"
-		//} else {
-		//	word = "失败"
-		//}
-		//DPrintf("发送请求结果:" + strconv.Itoa(i) + word)
-		//if !ok {
-		//	continue
-		//}
 	}
 }
 
@@ -445,6 +430,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.lastTimeHeard = time.Now()
 					rf.currentTerm++
 					rf.votedFor = me
+					rf.voteCount = 1
 					go rf.askForVotes()
 				case <-time.After(rf.electTimePeriod):
 					//超时,开始新一轮选举
