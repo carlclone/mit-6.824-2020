@@ -14,3 +14,11 @@ Reduce parallelism test √
 Task timeout redistribute test √
 
 Crash Test √
+
+# Lab2 Raft
+
+## Part 2A √
+
+Initial Election √
+
+ReElection with network failure √ 
