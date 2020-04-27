@@ -88,7 +88,6 @@ type Raft struct {
 	receivedRequestVote chan bool
 
 	//candidate channels
-	voteForSelf        chan bool
 	becomeLeader       chan bool
 	voteBeGranted      chan RequestVoteArgs
 	rvReqsReceived     chan RequestVoteArgs
@@ -194,11 +193,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.rvReqsReceived <- *args
 
 	var tmpReply RequestVoteReply = <-rf.rvReplyReceived
+
 	DPrintf("RequestVote")
 	DPrintf(fmt.Sprint(tmpReply))
-	//DPrintf(strconv.Itoa(len(rf.peers)))
+
 	reply.VoteGranted = tmpReply.VoteGranted
-	//reply.Term = tmpReply.Term
 
 	return
 }
@@ -207,11 +206,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.Entries == nil {
 		rf.receivedHeartBeat <- *args
-
-		//if args.Term > rf.currentTerm {
-		//	rf.termLessThanOthers <- args.Term
-		//}
-
 	}
 
 	return
@@ -330,15 +324,15 @@ func (rf *Raft) sendHeartBeats() {
 func (rf *Raft) askForVotes() {
 
 	DPrintf("群发投票")
+	args := RequestVoteArgs{}
+	args.Term = rf.currentTerm
+	args.CandidateId = rf.me
+	reply := RequestVoteReply{}
+
 	for i, _ := range rf.peers {
 		if i == rf.me {
 			continue
 		}
-		args := RequestVoteArgs{}
-		args.Term = rf.currentTerm
-		args.CandidateId = rf.me
-
-		reply := RequestVoteReply{}
 		go func(i int) {
 			rf.sendRequestVote(i, &args, &reply)
 		}(i)
@@ -362,14 +356,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
-	rf.electTimePeriod = time.Duration(rand.Int63()%1000+250) * time.Millisecond
+	rf.electTimePeriod = time.Duration(rand.Int63()%500+200) * time.Millisecond
 	rf.lastTimeHeard = time.Now()
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
 
 	rf.receivedHeartBeat = make(chan AppendEntriesArgs, 50)
 	rf.receivedRequestVote = make(chan bool, 50)
-	rf.voteForSelf = make(chan bool, 50)
 	rf.becomeLeader = make(chan bool, 50)
 	rf.voteBeGranted = make(chan RequestVoteArgs, 50)
 	rf.rvReqsReceived = make(chan RequestVoteArgs, 50)
@@ -391,7 +384,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.sendHeartBeats()
 			}
 
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}()
 
@@ -423,18 +416,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//收到心跳包 / AE RPC, 变成 follower
 			//超时 , 开始新一轮
 			case ROLE_CANDIDATE:
+				//给自己投票和汇集选票
+				rf.currentTerm++
+				rf.votedFor = me
+				rf.voteCount = 1
+				go rf.askForVotes()
 				select {
-				case <-rf.voteForSelf:
-					//给自己投票和汇集选票
-					//DPrintf(rf.lastTimeHeard.Add(rf.electTimePeriod).String())
-					rf.lastTimeHeard = time.Now()
-					rf.currentTerm++
-					rf.votedFor = me
-					rf.voteCount = 1
-					go rf.askForVotes()
 				case <-time.After(rf.electTimePeriod):
-					//超时,开始新一轮选举
-					rf.voteForSelf <- true
 				case <-rf.receivedHeartBeat:
 					//变成 follower
 					rf.role = ROLE_FOLLOWER
@@ -457,7 +445,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 			}
 
-			time.Sleep(10 * time.Millisecond)
 		}
 
 	}()
