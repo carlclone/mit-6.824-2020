@@ -449,7 +449,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				//定期发心跳包
 				//如果leader断开重连 , 收到了心跳包,则变成follower
 			case ROLE_LEADER:
-
+				select {
+				case args := <-rf.receivedHeartBeat:
+					if args.Term > rf.currentTerm {
+						rf.role = ROLE_FOLLOWER
+					}
+				}
 			}
 
 			time.Sleep(10 * time.Millisecond)
