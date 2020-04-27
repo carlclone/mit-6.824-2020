@@ -140,7 +140,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 	}
 
-	DPrintf("投票请求处理完毕 %v %v %v", rf.me, args, reply)
+	DPrintf("%v的投票请求处理完毕  %v %v", args.CandidateId, args, reply)
 }
 
 //发送请求
@@ -163,7 +163,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	DPrintf("发出投票请求 %v %v %v", rf.me, args, reply)
+	DPrintf("%v发出投票请求 %v %v", rf.me, args, reply)
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	//rules for all server (reqs and response)
@@ -218,20 +218,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case <-time.After(time.Duration((rand.Int63())%490+150) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
 					DPrintf("%v follower超时->candidate ", rf.me)
 					rf.mu.Lock()
-					defer rf.mu.Unlock()
 					rf.role = ROLE_CANDIDATE
+					rf.mu.Unlock()
 
 				}
 
 			case ROLE_CANDIDATE:
-				DPrintf("%v 开始选举 任期%v", rf.me, rf.currentTerm)
-
 				rf.mu.Lock()
-				defer rf.mu.Unlock()
-
 				rf.currentTerm++
 				rf.votedFor = me
 				rf.voteCount = 1
+				rf.mu.Unlock()
+
+				DPrintf("%v 开始选举 任期%v", rf.me, rf.currentTerm)
 				args := &RequestVoteArgs{
 					Term:        rf.currentTerm,
 					CandidateId: me,
@@ -243,14 +242,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						rf.sendRequestVote(i, args, reply)
 					}
 				}
+				DPrintf("%v 获得投票数%v", rf.me, rf.voteCount)
 				if rf.voteCount > len(rf.peers)/2 {
 					rf.role = ROLE_LEADER
 				}
+
 				select {
 				case <-rf.receiveAppendEntries:
 					rf.mu.Lock()
-					defer rf.mu.Unlock()
 					rf.role = ROLE_FOLLOWER
+					rf.mu.Unlock()
 				case <-time.After(time.Duration((rand.Int63())%490+150) * time.Millisecond):
 				}
 
