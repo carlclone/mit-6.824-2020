@@ -34,36 +34,12 @@ const (
 	ROLE_LEADER    = 3
 )
 
-//
-// as each Raft peer becomes aware that successive log entries are
-// committed, the peer should send an ApplyMsg to the service (or
-// tester) on the same server, via the applyCh passed to Make(). set
-// CommandValid to true to indicate that the ApplyMsg contains a newly
-// committed log entry.
-//
-// in Lab 3 you'll want to send other kinds of messages (e.g.,
-// snapshots) on the applyCh; at that point you can add fields to
-// ApplyMsg, but set CommandValid to false for these other uses.
-//
-type ApplyMsg struct {
-	CommandValid bool
-	Command      interface{}
-	CommandIndex int
-}
-
-//
-// A Go object implementing a single Raft peer.
-//
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
-
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
 
 	//persistent
 	currentTerm int
@@ -83,6 +59,7 @@ type Raft struct {
 	receiveVoteReqs      chan bool
 }
 
+//请求结构
 type AppendEntriesArgs struct {
 	Term              int //当前 term
 	LeaderId          int
@@ -95,6 +72,20 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term    int
 	Success bool
+}
+
+type RequestVoteArgs struct {
+	// Your data here (2A, 2B).
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
+}
+
+type RequestVoteReply struct {
+	// Your data here (2A).
+	Term        int
+	VoteGranted bool
 }
 
 //处理请求
@@ -114,12 +105,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.role = ROLE_FOLLOWER
 	}
 
+	if args.Term == rf.currentTerm && rf.role == ROLE_CANDIDATE {
+		rf.role = ROLE_FOLLOWER
+	}
+
 	return
 }
 
-//
-// 处理请求
-//
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 
@@ -156,49 +148,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	return ok
 }
 
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-	Term         int
-	CandidateId  int
-	LastLogIndex int
-	LastLogTerm  int
-}
-
-type RequestVoteReply struct {
-	// Your data here (2A).
-	Term        int
-	VoteGranted bool
-}
-
 // 发送请求
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
-//
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
@@ -221,14 +171,99 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return ok
 }
 
-// return currentTerm and whether this server
-// believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
 
-	var term int
-	var isleader bool
 	// Your code here (2A).
-	return term, isleader
+	return rf.currentTerm, rf.role == ROLE_LEADER
+}
+
+func Make(peers []*labrpc.ClientEnd, me int,
+	persister *Persister, applyCh chan ApplyMsg) *Raft {
+	rf := &Raft{}
+	rf.peers = peers
+	rf.persister = persister
+	rf.me = me
+
+	rf.receiveAppendEntries = make(chan bool, 50)
+	rf.receiveVoteReqs = make(chan bool, 50)
+
+	// Your initialization code here (2A, 2B, 2C).
+
+	// initialize from state persisted before a crash
+	rf.readPersist(persister.ReadRaftState())
+
+	go func() {
+
+		for {
+			switch rf.role {
+			case ROLE_FOLLOWER:
+				select {
+				case <-rf.receiveAppendEntries:
+				case <-rf.receiveVoteReqs:
+				case <-time.After(time.Duration(rand.Int63())%490 + 150): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
+					rf.role = ROLE_CANDIDATE
+				}
+
+			case ROLE_CANDIDATE:
+				rf.currentTerm++
+				rf.votedFor = me
+				rf.voteCount = 1
+				args := &RequestVoteArgs{
+					Term:        rf.currentTerm,
+					CandidateId: me,
+				}
+
+				for i, _ := range rf.peers {
+					if i != rf.me {
+						reply := &RequestVoteReply{}
+						rf.sendRequestVote(i, args, reply)
+					}
+				}
+				if rf.voteCount > len(rf.peers)/2 {
+					rf.role = ROLE_LEADER
+				}
+				select {
+				case <-rf.receiveAppendEntries:
+					rf.role = ROLE_FOLLOWER
+				case <-time.After(time.Duration(rand.Int63())%490 + 150):
+				}
+
+			case ROLE_LEADER:
+				args := &AppendEntriesArgs{
+					Term:     rf.currentTerm,
+					LeaderId: me,
+				}
+
+				for i, _ := range rf.peers {
+					if i != rf.me {
+						reply := &AppendEntriesReply{}
+						rf.sendAppendEntries(i, args, reply)
+					}
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+	}()
+
+	return rf
+
+}
+
+//
+// as each Raft peer becomes aware that successive log entries are
+// committed, the peer should send an ApplyMsg to the service (or
+// tester) on the same server, via the applyCh passed to Make(). set
+// CommandValid to true to indicate that the ApplyMsg contains a newly
+// committed log entry.
+//
+// in Lab 3 you'll want to send other kinds of messages (e.g.,
+// snapshots) on the applyCh; at that point you can add fields to
+// ApplyMsg, but set CommandValid to false for these other uses.
+//
+type ApplyMsg struct {
+	CommandValid bool
+	Command      interface{}
+	CommandIndex int
 }
 
 //
@@ -312,86 +347,4 @@ func (rf *Raft) Kill() {
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead)
 	return z == 1
-}
-
-//
-// the service or tester wants to create a Raft server. the ports
-// of all the Raft servers (including this one) are in peers[]. this
-// server's port is peers[me]. all the servers' peers[] arrays
-// have the same order. persister is a place for this server to
-// save its persistent state, and also initially holds the most
-// recent saved state, if any. applyCh is a channel on which the
-// tester or service expects Raft to send ApplyMsg messages.
-// Make() must return quickly, so it should start goroutines
-// for any long-running work.
-//
-func Make(peers []*labrpc.ClientEnd, me int,
-	persister *Persister, applyCh chan ApplyMsg) *Raft {
-	rf := &Raft{}
-	rf.peers = peers
-	rf.persister = persister
-	rf.me = me
-
-	rf.receiveAppendEntries = make(chan bool, 50)
-	rf.receiveVoteReqs = make(chan bool, 50)
-
-	// Your initialization code here (2A, 2B, 2C).
-
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
-
-	return rf
-
-	go func() {
-
-		for {
-			switch rf.role {
-			case ROLE_FOLLOWER:
-				select {
-				case <-rf.receiveAppendEntries:
-				case <-rf.receiveVoteReqs:
-				case <-time.After(time.Duration(rand.Int63())%490 + 10):
-					rf.role = ROLE_CANDIDATE
-				}
-
-			case ROLE_CANDIDATE:
-				rf.currentTerm++
-				rf.votedFor = me
-				rf.voteCount = 1
-				args := &RequestVoteArgs{
-					Term:        rf.currentTerm,
-					CandidateId: me,
-				}
-
-				for i, _ := range rf.peers {
-					if i != rf.me {
-						reply := &RequestVoteReply{}
-						rf.sendRequestVote(i, args, reply)
-					}
-				}
-				if rf.voteCount > len(rf.peers)/2 {
-					rf.role = ROLE_LEADER
-				}
-				select {
-				case <-rf.receiveAppendEntries:
-					rf.role = ROLE_FOLLOWER
-				case <-time.After(time.Duration(rand.Int63())%490 + 10):
-				}
-
-			case ROLE_LEADER:
-				args := &AppendEntriesArgs{
-					Term:     rf.currentTerm,
-					LeaderId: me,
-				}
-
-				for i, _ := range rf.peers {
-					if i != rf.me {
-						reply := &AppendEntriesReply{}
-						rf.sendAppendEntries(i, args, reply)
-					}
-				}
-				time.Sleep(20 * time.Millisecond)
-			}
-		}
-	}()
 }
