@@ -79,7 +79,6 @@ type Raft struct {
 	//volatile / only leader
 
 	//other
-	lastTimeHeard   time.Time
 	role            int
 	electTimePeriod time.Duration
 
@@ -329,14 +328,18 @@ func (rf *Raft) askForVotes() {
 	args.CandidateId = rf.me
 	reply := RequestVoteReply{}
 
+	var wg sync.WaitGroup
+
 	for i, _ := range rf.peers {
-		if i == rf.me {
-			continue
+		if i != rf.me && rf.role == ROLE_CANDIDATE {
+			wg.Add(1)
+			go func(i int) {
+				rf.sendRequestVote(i, &args, &reply)
+				wg.Done()
+			}(i)
 		}
-		go func(i int) {
-			rf.sendRequestVote(i, &args, &reply)
-		}(i)
 	}
+	wg.Wait()
 }
 
 //
@@ -356,8 +359,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
-	rf.electTimePeriod = time.Duration(rand.Int63()%500+200) * time.Millisecond
-	rf.lastTimeHeard = time.Now()
+	rf.electTimePeriod = time.Duration(rand.Int63()%300+200) * time.Millisecond
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
 
@@ -407,7 +409,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					handleFReceivedHeartBeat(rf, args)
 				case args := <-rf.rvReqsReceived:
 					handleFVoteReqs(rf, args)
-				case <-time.After(rf.electTimePeriod):
+				case <-time.After(time.Duration(rand.Int63()%300+200) * time.Millisecond):
 					handleFElectTimeUp(rf)
 				}
 
@@ -417,12 +419,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//超时 , 开始新一轮
 			case ROLE_CANDIDATE:
 				//给自己投票和汇集选票
+				rf.mu.Lock()
 				rf.currentTerm++
 				rf.votedFor = me
 				rf.voteCount = 1
-				go rf.askForVotes()
+				rf.askForVotes()
+				rf.mu.Unlock()
 				select {
-				case <-time.After(rf.electTimePeriod):
+				case <-time.After(time.Duration(rand.Int63()%300+200) * time.Millisecond):
 				case <-rf.receivedHeartBeat:
 					//变成 follower
 					rf.role = ROLE_FOLLOWER
@@ -464,7 +468,6 @@ func handleFElectTimeUp(rf *Raft) {
 }
 
 func handleFVoteReqs(rf *Raft, args RequestVoteArgs) {
-	rf.lastTimeHeard = time.Now()
 	DPrintf("重置超时")
 	var reply = RequestVoteReply{}
 	reply.Term = args.Term
@@ -484,7 +487,6 @@ func handleFVoteReqs(rf *Raft, args RequestVoteArgs) {
 
 func handleFReceivedHeartBeat(rf *Raft, args AppendEntriesArgs) {
 	DPrintf("收到心跳包")
-	rf.lastTimeHeard = time.Now()
 	rf.currentTerm = args.Term
 	rf.votedFor = -1
 }
