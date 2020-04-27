@@ -47,8 +47,8 @@ type Raft struct {
 	log         []interface{}
 
 	//volatile
-	commitIndex int
-	lastApplied int
+	commitIndex int //log里最大的已commited的index
+	lastApplied int //log里最大的index , (applied的)
 
 	//volatile / only leader
 
@@ -63,10 +63,10 @@ type Raft struct {
 type AppendEntriesArgs struct {
 	Term              int //当前 term
 	LeaderId          int
-	PrevLogIndex      int //
-	PrevLogTerm       int
+	PrevLogIndex      int //上一个log的index
+	PrevLogTerm       int //上一个log的term
 	Entries           []interface{}
-	LeaderCommitIndex int
+	LeaderCommitIndex int // ?
 }
 
 type AppendEntriesReply struct {
@@ -372,10 +372,11 @@ func (rf *Raft) readPersist(data []byte) {
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
-	term := -1
-	isLeader := true
+	term := rf.currentTerm
+	isLeader := rf.role == ROLE_LEADER
 
 	// Your code here (2B).
+	rf.log = append(rf.log, command)
 
 	return index, term, isLeader
 }
