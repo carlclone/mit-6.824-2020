@@ -84,7 +84,6 @@ type Raft struct {
 	electTimePeriod time.Duration
 
 	//follower channels , 当做接收事件的通道
-	electTimesUp        chan bool
 	receivedHeartBeat   chan AppendEntriesArgs
 	receivedRequestVote chan bool
 
@@ -312,17 +311,6 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-func (rf *Raft) electTimeDetect() {
-	//DPrintf("检测超时时间")
-	//DPrintf(rf.electTimePeriod.String())
-	//DPrintf(rf.lastTimeHeard.String())
-	if rf.lastTimeHeard.Add(rf.electTimePeriod).Before(time.Now()) {
-
-		rf.electTimesUp <- true
-		rf.voteForSelf <- true
-	}
-}
-
 //发送心跳包给所有人除了自己
 func (rf *Raft) sendHeartBeats() {
 	for i, _ := range rf.peers {
@@ -394,8 +382,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
 
-	rf.electTimesUp = make(chan bool, 50)
-
 	rf.receivedHeartBeat = make(chan AppendEntriesArgs, 50)
 	rf.receivedRequestVote = make(chan bool, 50)
 	rf.voteForSelf = make(chan bool, 50)
@@ -424,18 +410,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		}
 	}()
 
-	go func() {
-		for {
-
-			switch rf.role {
-			case ROLE_FOLLOWER:
-				rf.electTimeDetect()
-			}
-
-			time.Sleep(10 * time.Millisecond)
-		}
-	}()
-
 	//事件循环模型线程 , 每个角色的事件需要执行的逻辑
 	go func() {
 		// 是candidate , 需要发送RV , 并判断自己是否成为了leader ,
@@ -455,7 +429,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					handleFReceivedHeartBeat(rf, args)
 				case args := <-rf.rvReqsReceived:
 					handleFVoteReqs(rf, args)
-				case <-rf.electTimesUp:
+				case <-time.After(rf.electTimePeriod):
 					handleFElectTimeUp(rf)
 				}
 
@@ -472,7 +446,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.currentTerm++
 					rf.votedFor = me
 					go rf.askForVotes()
-				case <-rf.electTimesUp:
+				case <-time.After(rf.electTimePeriod):
 					//超时,开始新一轮选举
 					rf.voteForSelf <- true
 				case <-rf.receivedHeartBeat:
