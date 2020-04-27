@@ -93,6 +93,7 @@ type Raft struct {
 	rvReplyReceived    chan RequestVoteReply
 	termLessThanOthers chan int
 	voteCount          int
+	voteForSelf        chan bool
 }
 
 // return currentTerm and whether this server
@@ -244,9 +245,12 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 
 	if ok {
 		if reply.VoteGranted {
+			rf.mu.Lock()
 			rf.voteCount++
+			rf.mu.Unlock()
+			DPrintf("投票结果" + strconv.Itoa(rf.voteCount))
 			if rf.role == ROLE_CANDIDATE && rf.voteCount > len(rf.peers)/2 {
-				rf.role = ROLE_FOLLOWER
+				rf.role = ROLE_LEADER
 				rf.becomeLeader <- true
 			}
 		}
@@ -319,7 +323,6 @@ func (rf *Raft) sendHeartBeats() {
 	}
 }
 
-//发送RV给所有人除了自己
 func (rf *Raft) askForVotes() {
 
 	DPrintf("群发投票")
@@ -328,18 +331,13 @@ func (rf *Raft) askForVotes() {
 	args.CandidateId = rf.me
 	reply := RequestVoteReply{}
 
-	var wg sync.WaitGroup
-
 	for i, _ := range rf.peers {
 		if i != rf.me && rf.role == ROLE_CANDIDATE {
-			wg.Add(1)
 			go func(i int) {
 				rf.sendRequestVote(i, &args, &reply)
-				wg.Done()
 			}(i)
 		}
 	}
-	wg.Wait()
 }
 
 //
@@ -369,6 +367,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.voteBeGranted = make(chan RequestVoteArgs, 50)
 	rf.rvReqsReceived = make(chan RequestVoteArgs, 50)
 	rf.termLessThanOthers = make(chan int, 50)
+	rf.voteForSelf = make(chan bool, 50)
 
 	rf.rvReplyReceived = make(chan RequestVoteReply)
 
@@ -407,10 +406,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case args := <-rf.receivedHeartBeat:
 					//收到心跳包,重置选举超时时间
 					handleFReceivedHeartBeat(rf, args)
+					heartBeatGeneral(args, rf)
 				case args := <-rf.rvReqsReceived:
 					handleFVoteReqs(rf, args)
-				case <-time.After(time.Duration(rand.Int63()%300+200) * time.Millisecond):
-					handleFElectTimeUp(rf)
+					rvGeneral(args, rf)
+				case <-time.After(time.Duration(rand.Int63()%1000+100) * time.Millisecond):
+					DPrintf("已超时" + strconv.Itoa(rf.me))
+					DPrintf("变成candidate")
+					rf.role = ROLE_CANDIDATE
+					rf.voteForSelf <- true
 				}
 
 			//currentTerm++ , vote++ , reset elect time , 汇集选票
@@ -418,34 +422,43 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//收到心跳包 / AE RPC, 变成 follower
 			//超时 , 开始新一轮
 			case ROLE_CANDIDATE:
-				//给自己投票和汇集选票
-				rf.mu.Lock()
-				rf.currentTerm++
-				rf.votedFor = me
-				rf.voteCount = 1
-				rf.askForVotes()
-				rf.mu.Unlock()
 				select {
-				case <-time.After(time.Duration(rand.Int63()%300+200) * time.Millisecond):
-				case <-rf.receivedHeartBeat:
-					//变成 follower
-					rf.role = ROLE_FOLLOWER
+				case <-rf.voteForSelf:
+					//给自己投票和汇集选票
+					rf.mu.Lock()
+					rf.currentTerm++
+					rf.votedFor = me
+					rf.voteCount = 1
+					rf.mu.Unlock()
+					rf.askForVotes()
+
+				case <-time.After(time.Duration(rand.Int63()%1000+100) * time.Millisecond):
+					rf.voteForSelf <- true
+
 				case <-rf.becomeLeader:
 					//变成leader
 					DPrintf("变成leader")
 					rf.role = ROLE_LEADER
 					rf.sendHeartBeats()
 
+					/*处理rpc请求*/
+				case args := <-rf.receivedHeartBeat:
+					rf.role = ROLE_FOLLOWER
+					heartBeatGeneral(args, rf)
+				case args := <-rf.rvReqsReceived:
+					rvGeneral(args, rf)
 				}
 
 				//定期发心跳包
 				//如果leader断开重连 , 收到了心跳包,则变成follower
 			case ROLE_LEADER:
 				select {
+				/*处理rpc请求*/
 				case args := <-rf.receivedHeartBeat:
-					if args.Term > rf.currentTerm {
-						rf.role = ROLE_FOLLOWER
-					}
+					rf.role = ROLE_FOLLOWER
+					heartBeatGeneral(args, rf)
+				case args := <-rf.rvReqsReceived:
+					rvGeneral(args, rf)
 				}
 			}
 
@@ -459,12 +472,27 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	return rf
 }
 
+func rvGeneral(args RequestVoteArgs, rf *Raft) {
+	if args.Term > rf.currentTerm {
+		rf.role = ROLE_FOLLOWER
+		rf.currentTerm = args.Term
+		rf.votedFor = -1
+	}
+}
+
+func heartBeatGeneral(args AppendEntriesArgs, rf *Raft) {
+	if args.Term > rf.currentTerm {
+		rf.role = ROLE_FOLLOWER
+		rf.currentTerm = args.Term
+		rf.votedFor = -1
+	}
+}
+
 func handleFElectTimeUp(rf *Raft) {
 	DPrintf("已超时" + strconv.Itoa(rf.me))
-	//选举超时,变成 candidate
-	//DPrintf(fmt.Sprint(rf.me))
 	DPrintf("变成c")
 	rf.role = ROLE_CANDIDATE
+	rf.voteForSelf <- true
 }
 
 func handleFVoteReqs(rf *Raft, args RequestVoteArgs) {
