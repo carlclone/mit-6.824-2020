@@ -91,11 +91,15 @@ type RequestVoteReply struct {
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	rf.receiveAppendEntries <- true
 
 	reply.Success = false
 	// 1
 	if args.Term < rf.currentTerm {
+		DPrintf("term过期请求 %v %v %v", rf.me, args, reply)
 		return
 	}
 
@@ -109,16 +113,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.role = ROLE_FOLLOWER
 	}
 
+	DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
 	return
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
 	rf.receiveVoteReqs <- true
 
 	//1
 	if args.Term < rf.currentTerm {
+		DPrintf("term过期请求 %v %v %v", rf.me, args, reply)
 		return
 	}
 
@@ -133,10 +140,14 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 	}
 
+	DPrintf("投票请求处理完毕 %v %v %v", rf.me, args, reply)
 }
 
 //发送请求
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	DPrintf("发出心跳请求 %v %v %v", rf.me, args, reply)
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	//rules for all server (reqs and response)
@@ -150,6 +161,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 // 发送请求
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	DPrintf("发出投票请求 %v %v %v", rf.me, args, reply)
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	//rules for all server (reqs and response)
@@ -159,7 +173,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	}
 
 	if ok {
-
 		if reply.VoteGranted {
 			rf.mu.Lock()
 			rf.voteCount++
@@ -187,24 +200,35 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.receiveAppendEntries = make(chan bool, 50)
 	rf.receiveVoteReqs = make(chan bool, 50)
 
+	rf.role = ROLE_FOLLOWER
 	// Your initialization code here (2A, 2B, 2C).
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	go func() {
+	DPrintf("创建peer")
 
+	go func() {
 		for {
 			switch rf.role {
 			case ROLE_FOLLOWER:
 				select {
 				case <-rf.receiveAppendEntries:
 				case <-rf.receiveVoteReqs:
-				case <-time.After(time.Duration(rand.Int63())%490 + 150): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
+				case <-time.After(time.Duration((rand.Int63())%490+150) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
+					DPrintf("%v follower超时->candidate ", rf.me)
+					rf.mu.Lock()
+					defer rf.mu.Unlock()
 					rf.role = ROLE_CANDIDATE
+
 				}
 
 			case ROLE_CANDIDATE:
+				DPrintf("%v 开始选举 任期%v", rf.me, rf.currentTerm)
+
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+
 				rf.currentTerm++
 				rf.votedFor = me
 				rf.voteCount = 1
@@ -224,8 +248,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 				select {
 				case <-rf.receiveAppendEntries:
+					rf.mu.Lock()
+					defer rf.mu.Unlock()
 					rf.role = ROLE_FOLLOWER
-				case <-time.After(time.Duration(rand.Int63())%490 + 150):
+				case <-time.After(time.Duration((rand.Int63())%490+150) * time.Millisecond):
 				}
 
 			case ROLE_LEADER:
