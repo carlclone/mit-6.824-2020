@@ -72,6 +72,7 @@ func TestReElection2A(t *testing.T) {
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
 
+	//发现有 term 比自己大的 AppenEntries 请求 , 更新,变成 follower
 	DPrintf("leader1重新加入测试通过")
 
 	// if there's no quorum, no leader should
@@ -81,18 +82,23 @@ func TestReElection2A(t *testing.T) {
 	time.Sleep(2 * RaftElectionTimeout)
 	cfg.checkNoLeader()
 
+	//投票阶段的 bug ,
+	// 1 需要并发发送请求 , 否则会卡在一个断开的 peer 上
+	// 2 需要丢弃过期任期的投票
 	DPrintf("peers数不足,无法形成leader测试通过")
 
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
 	cfg.checkOneLeader()
 
+	//也是投票阶段的 bug
 	DPrintf("重新加入,peer足够,生成一个leader通过")
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
 	cfg.checkOneLeader()
 
+	//心跳阶段的 bug
 	DPrintf("已有leader的情况下,再重连一个本来是leader的peer,不影响新leader 测试通过")
 
 	cfg.end()
