@@ -51,6 +51,8 @@ type Raft struct {
 	lastApplied int //log里最大的index , (applied的)
 
 	//volatile / only leader
+	nextIndex  []int
+	matchIndex []int
 
 	//other
 	role                 int
@@ -219,7 +221,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.votedFor = -1
 	rf.role = ROLE_FOLLOWER
+	rf.log = make([]interface{}, 2)
 	// Your initialization code here (2A, 2B, 2C).
+	rf.nextIndex = make([]int, len(rf.peers))
+	for i, _ := range rf.nextIndex {
+		rf.nextIndex[i] = 1
+	}
+	rf.matchIndex = make([]int, len(rf.peers))
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
@@ -371,13 +379,20 @@ func (rf *Raft) readPersist(data []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+
+	// Your code here (2B).
+	if len(rf.log) == 0 {
+		//初始index 为 1
+		rf.log[1] = command
+		rf.lastApplied = 1
+	} else {
+		rf.log = append(rf.log, command)
+		rf.lastApplied++
+	}
+
 	index := -1
 	term := rf.currentTerm
 	isLeader := rf.role == ROLE_LEADER
-
-	// Your code here (2B).
-	rf.log = append(rf.log, command)
-
 	return index, term, isLeader
 }
 
