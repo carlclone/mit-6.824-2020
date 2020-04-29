@@ -47,8 +47,8 @@ type Raft struct {
 	log         []interface{}
 
 	//volatile
-	commitIndex int //log里最大的已commited的index
-	lastApplied int //log里最大的index , (applied的)
+	commitIndex int
+	lastApplied int
 
 	//volatile / only leader
 	nextIndex  []int
@@ -63,10 +63,10 @@ type Raft struct {
 
 //请求结构
 type AppendEntriesArgs struct {
-	Term              int //当前 term
+	Term              int
 	LeaderId          int
-	PrevLogIndex      int //上一个log的index
-	PrevLogTerm       int //上一个log的term
+	PrevLogIndex      int
+	PrevLogTerm       int
 	Entries           []interface{}
 	LeaderCommitIndex int // ?
 }
@@ -170,7 +170,6 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	return ok
 }
 
-// 发送请求
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 
 	DPrintf("%v发出投票请求 %v %v", rf.me, args, reply)
