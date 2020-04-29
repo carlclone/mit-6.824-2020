@@ -44,7 +44,7 @@ type Raft struct {
 	//persistent
 	currentTerm int
 	votedFor    int
-	log         []interface{}
+	log         []Entry
 
 	//volatile
 	commitIndex int //log里最大的已commited的index
@@ -61,13 +61,18 @@ type Raft struct {
 	receiveVoteReqs      chan bool
 }
 
+type Entry struct {
+	command interface{}
+	term    int
+}
+
 //请求结构
 type AppendEntriesArgs struct {
 	Term              int //当前 term
 	LeaderId          int
 	PrevLogIndex      int //上一个log的index
 	PrevLogTerm       int //上一个log的term
-	Entries           []interface{}
+	Entries           []Entry
 	LeaderCommitIndex int // ?
 }
 
@@ -100,6 +105,29 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Term < rf.currentTerm {
 		DPrintf("term过期请求 %v %v %v", rf.me, args, reply)
 		return
+	}
+
+	//2
+	if len(rf.log)-1 < args.PrevLogIndex {
+		return
+	}
+
+	prevEntry := rf.log[args.PrevLogIndex]
+	if prevEntry.term != args.PrevLogTerm {
+		return
+	}
+
+	//3
+
+	//4
+
+	//5
+	if args.LeaderCommitIndex > rf.commitIndex {
+		if args.LeaderCommitIndex > len(rf.log)-1 {
+			rf.commitIndex = len(rf.log) - 1
+		} else {
+			rf.commitIndex = args.LeaderCommitIndex
+		}
 	}
 
 	reply.Success = true
@@ -142,7 +170,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	//2 前半句
-	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+	//后半句 : Raft 通过比较两份日志中最后一条日志条目的索引值和任期号来定义谁的日志比较新。
+	// 如果两份日志最后条目的任期号不同，那么任期号大的日志更新。
+	// 如果两份日志最后条目的任期号相同，那么日志较长的那个更新。
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
+		(args.LastLogTerm > rf.lastLogTerm() || (args.LastLogTerm == rf.lastLogTerm() && args.LastLogIndex > rf.lastLogIndex())) {
 		reply.VoteGranted = true
 	}
 
@@ -152,10 +184,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 //发送请求
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	//DPrintf("发出心跳请求 %v %v %v", rf.me, args, reply)
+
+	if rf.lastLogIndex() >= rf.nextIndex[server] {
+		args.Entries = rf.log[rf.nextIndex[server]:]
+	}
+
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	if !reply.Success {
-		return ok
+		rf.nextIndex[server]--
 	}
 
 	//rules for all server (reqs and response)
@@ -165,6 +202,11 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
 		rf.mu.Unlock()
+	}
+
+	if reply.Success {
+		rf.nextIndex[server] = rf.lastLogIndex() + 1
+		rf.matchIndex[server] = rf.lastLogIndex()
 	}
 
 	return ok
@@ -196,6 +238,11 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	if rf.voteCount > len(rf.peers)/2 {
 		rf.mu.Lock()
 		rf.role = ROLE_LEADER
+
+		rf.nextIndex = make([]int, len(rf.peers))
+		for i, _ := range rf.nextIndex {
+			rf.nextIndex[i] = len(rf.log) - 1 + 1
+		}
 		rf.mu.Unlock()
 		DPrintf("%v-成为leader", rf.me)
 	}
@@ -221,12 +268,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.votedFor = -1
 	rf.role = ROLE_FOLLOWER
-	rf.log = make([]interface{}, 2)
+	rf.log = append(rf.log, Entry{})
 	// Your initialization code here (2A, 2B, 2C).
-	rf.nextIndex = make([]int, len(rf.peers))
-	for i, _ := range rf.nextIndex {
-		rf.nextIndex[i] = 1
-	}
+
 	rf.matchIndex = make([]int, len(rf.peers))
 
 	// initialize from state persisted before a crash
@@ -286,6 +330,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	go func() {
 		for {
+
 			switch rf.role {
 			case ROLE_LEADER:
 				args := &AppendEntriesArgs{
@@ -301,6 +346,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 
 			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	go func() {
+		for {
+			// 所有committed 但未 applied 的 Entry
+			rf.applyCommitIndexLog(applyCh)
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
@@ -381,18 +434,15 @@ func (rf *Raft) readPersist(data []byte) {
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	// Your code here (2B).
-	if len(rf.log) == 0 {
-		//初始index 为 1
-		rf.log[1] = command
-		rf.lastApplied = 1
-	} else {
-		rf.log = append(rf.log, command)
-		rf.lastApplied++
-	}
-
+	isLeader := rf.role == ROLE_LEADER
 	index := -1
 	term := rf.currentTerm
-	isLeader := rf.role == ROLE_LEADER
+
+	if isLeader {
+		rf.log = append(rf.log, Entry{command, rf.currentTerm})
+		index = rf.lastLogIndex()
+	}
+
 	return index, term, isLeader
 }
 
@@ -415,4 +465,19 @@ func (rf *Raft) Kill() {
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead)
 	return z == 1
+}
+
+func (rf *Raft) lastLogIndex() int {
+	return len(rf.log) - 1
+}
+
+func (rf *Raft) lastLogTerm() int {
+	return rf.log[rf.lastLogIndex()].term
+}
+
+func (rf *Raft) applyCommitIndexLog(applyCh chan ApplyMsg) {
+	for rf.commitIndex > rf.lastApplied {
+		rf.lastApplied++
+		applyCh <- ApplyMsg{Command: rf.log[rf.lastApplied], CommandIndex: rf.lastApplied}
+	}
 }
