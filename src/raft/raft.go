@@ -125,11 +125,17 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//3  follower 中跟 leader 冲突的日志条目会被 leader 的日志条目覆盖
 	//AppendEntries RPC 就会成功，将 follower 中跟 leader 冲突的日志条目全部删除然后追加 leader 中的日志条目
 	//这步只需要删除
+	// delete prevLogIndex+1 ~ logendIndex
+	rf.log = rf.log[:args.PrevLogIndex+1]
 
 	//4 append any new entries not already in the log 然后追加 leader 中的日志条目,如果有需要追加的日志条目的话
 	//这步是追加(和覆盖)
+	//prevLogIndex+1 ~ logendIndex
+	for _, entry := range args.Entries {
+		rf.log = append(rf.log, entry)
+	}
 
-	//5
+	//5 follower 更新 commitIndex
 	if args.LeaderCommitIndex > rf.commitIndex {
 		if args.LeaderCommitIndex > len(rf.log)-1 {
 			rf.commitIndex = len(rf.log) - 1
@@ -359,6 +365,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 				//一旦创建该日志条目的 leader 将它复制到过半的服务器上，该日志条目就会被提交
 				//同时，leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
+				// rules for servers 最后一条
+				//if exists an N >commitIndex ,
+				// majority of matchIndex[i] >= N , log.term=currentTerm ,
+				//set commitIndex=N
 
 			}
 			time.Sleep(20 * time.Millisecond)
@@ -369,7 +379,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		for {
 
 			//Follower 一旦知道某个日志条目已经被提交就会将该日志条目应用到自己的本地状态机中
-
 			// 所有committed 但未 applied 的 Entry
 			rf.applyCommitIndexLog(applyCh)
 			time.Sleep(20 * time.Millisecond)
