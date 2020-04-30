@@ -373,28 +373,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					}
 				}
 
-				//一旦创建该日志条目的 leader 将它复制到过半的服务器上，该日志条目就会被提交
-				//同时，leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
-				// rules for servers 最后一条
-				//if exists an N >commitIndex ,
-				N := rf.commitIndex + 1
-				// majority of matchIndex[i] >= N , log.Term=currentTerm ,
-				majority := 0
-
-				for i, index := range rf.matchIndex {
-					if rf.matchIndex[i] >= N && rf.log[index].Term == rf.currentTerm {
-						majority++
-					}
-				}
-				if majority >= 2 {
-					DPrintf("matchIndex %v", rf.matchIndex)
-				}
-
-				//set commitIndex=N
-				if majority > len(rf.peers)/2 {
-					rf.commitIndex = N
-				}
-
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
@@ -402,6 +380,28 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	go func() {
 		for {
+
+			//一旦创建该日志条目的 leader 将它复制到过半的服务器上，该日志条目就会被提交
+			//同时，leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
+			// rules for servers 最后一条
+			//if exists an N >commitIndex ,
+			N := rf.commitIndex + 1
+			// majority of matchIndex[i] >= N , log.Term=currentTerm ,
+			majority := 0
+
+			for i, index := range rf.matchIndex {
+				if rf.matchIndex[i] >= N && rf.log[index].Term == rf.currentTerm {
+					majority++
+				}
+			}
+			if majority >= 2 {
+				DPrintf("matchIndex %v", rf.matchIndex)
+			}
+
+			//set commitIndex=N
+			if majority > len(rf.peers)/2 {
+				rf.commitIndex = N
+			}
 
 			//Follower 一旦知道某个日志条目已经被提交就会将该日志条目应用到自己的本地状态机中
 			// 所有committed 但未 applied 的 Entry
