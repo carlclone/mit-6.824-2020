@@ -7,10 +7,10 @@ package raft
 //
 // rf = Make(...)
 //   create a new Raft server.
-// rf.Start(command interface{}) (index, term, isleader)
+// rf.Start(Command interface{}) (index, Term, isleader)
 //   start agreement on a new log entry
-// rf.GetState() (term, isLeader)
-//   ask a Raft for its current term, and whether it thinks it is leader
+// rf.GetState() (Term, isLeader)
+//   ask a Raft for its current Term, and whether it thinks it is leader
 // ApplyMsg
 //   each time a new entry is committed to the log, each Raft peer
 //   should send an ApplyMsg to the service (or tester)
@@ -44,11 +44,11 @@ type Raft struct {
 	//persistent
 	currentTerm int
 	votedFor    int
-	log         []interface{}
+	log         []Entry
 
 	//volatile
-	commitIndex int
-	lastApplied int
+	commitIndex int //log里最大的已commited的index
+	lastApplied int //log里最大的index , (applied的)
 
 	//volatile / only leader
 	nextIndex  []int
@@ -61,13 +61,20 @@ type Raft struct {
 	receiveVoteReqs      chan bool
 }
 
+type Entry struct {
+	Command interface{}
+	//任期号用来检测多个日志副本之间的不一致情况
+	//Leader 在特定的任期号内的一个日志索引处最多创建一个日志条目，同时日志条目在日志中的位置也从来不会改变。该点保证了上面的第一条特性。
+	Term int
+}
+
 //请求结构
 type AppendEntriesArgs struct {
-	Term              int
+	Term              int //当前 Term
 	LeaderId          int
-	PrevLogIndex      int
-	PrevLogTerm       int
-	Entries           []interface{}
+	PrevLogIndex      int //上一个log的index
+	PrevLogTerm       int //上一个log的term
+	Entries           []Entry
 	LeaderCommitIndex int // ?
 }
 
@@ -93,8 +100,12 @@ type RequestVoteReply struct {
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	rf.receiveAppendEntries <- true
 
+	DPrintf("开始处理心跳请求 %v %v %v", rf.me, args, reply)
 	reply.Success = false
 	// 1
 	if args.Term < rf.currentTerm {
@@ -102,26 +113,63 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
+	//2  leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
+	//在发送 AppendEntries RPC 的时候，leader 会将前一个日志条目的索引位置和任期号包含在里面。
+	// 如果 follower 在它的日志中找不到包含相同索引位置和任期号的条目，那么他就会拒绝该新的日志条目。
+	if len(rf.log)-1 < args.PrevLogIndex {
+		DPrintf("AE2")
+		return
+	}
+	//如果 follower 的日志和 leader 的不一致，那么下一次 AppendEntries RPC 中的一致性检查就会失败。
+	prevEntry := rf.log[args.PrevLogIndex]
+	if prevEntry.Term != args.PrevLogTerm {
+		DPrintf("log 不一致")
+		return
+	}
+
+	//3  follower 中跟 leader 冲突的日志条目会被 leader 的日志条目覆盖
+	//AppendEntries RPC 就会成功，将 follower 中跟 leader 冲突的日志条目全部删除然后追加 leader 中的日志条目
+	//这步只需要删除
+	// delete prevLogIndex+1 ~ logendIndex
+	rf.log = rf.log[:args.PrevLogIndex+1]
+
+	//4 append any new entries not already in the log 然后追加 leader 中的日志条目,如果有需要追加的日志条目的话
+	//这步是追加(和覆盖)
+	//prevLogIndex+1 ~ logendIndex
+	for _, entry := range args.Entries {
+		rf.log = append(rf.log, entry)
+	}
+
+	DPrintf("%v 处理后的日志 %v", rf.me, rf.log)
+
+	//5 follower 更新 commitIndex
+	if args.LeaderCommitIndex > rf.commitIndex {
+		if args.LeaderCommitIndex > len(rf.log)-1 {
+			rf.commitIndex = len(rf.log) - 1
+		} else {
+			rf.commitIndex = args.LeaderCommitIndex
+		}
+	}
+
 	reply.Success = true
 	//rules for all server (reqs and response)
 	if args.Term > rf.currentTerm {
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
 	}
 
 	if args.Term == rf.currentTerm && rf.role == ROLE_CANDIDATE {
-		rf.mu.Lock()
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
 	}
 
-	//DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
+	DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
 	return
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
 	rf.receiveVoteReqs <- true
 
@@ -134,15 +182,19 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//rules for all server (reqs and response)
 	if args.Term > rf.currentTerm {
 		DPrintf("%v 角色%v 收到新的term,更新term", rf.me, rf.role)
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
 		rf.votedFor = -1
-		rf.mu.Unlock()
 	}
 
 	//2 前半句
-	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+	//后半句 :
+	//Raft 使用投票的方式来阻止 candidate 赢得选举除非该 candidate 包含了所有已经提交的日志条目
+	// Raft 通过比较两份日志中最后一条日志条目的索引值和任期号来定义谁的日志比较新。
+	// 如果两份日志最后条目的任期号不同，那么任期号大的日志更新。
+	// 如果两份日志最后条目的任期号相同，那么日志较长的那个更新。
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
+		(args.LastLogTerm > rf.lastLogTerm() || (args.LastLogTerm == rf.lastLogTerm() && args.LastLogIndex >= rf.lastLogIndex())) {
 		reply.VoteGranted = true
 	}
 
@@ -152,50 +204,62 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 //发送请求
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	//DPrintf("发出心跳请求 %v %v %v", rf.me, args, reply)
+
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	//在被 follower 拒绝之后，leaer 就会减小 nextIndex 值并重试 AppendEntries RPC
 	if !reply.Success {
-		return ok
+		rf.nextIndex[server]--
 	}
 
 	//rules for all server (reqs and response)
 	if reply.Term > rf.currentTerm {
 		DPrintf("%v %v 收到新term", rf.me, rf.role)
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
+	}
+
+	if reply.Success {
+		rf.nextIndex[server] = rf.lastLogIndex() + 1
+		rf.matchIndex[server] = rf.lastLogIndex()
 	}
 
 	return ok
 }
 
+// 发送请求
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 
 	DPrintf("%v发出投票请求 %v %v", rf.me, args, reply)
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	//rules for all server (reqs and response)
 	if reply.Term > rf.currentTerm {
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
 	}
 
 	if ok {
 		if reply.VoteGranted {
-			rf.mu.Lock()
 			rf.voteCount++
-			rf.mu.Unlock()
 			DPrintf("%v 获得投票数%v", rf.me, rf.voteCount)
 		}
 	}
 
 	if rf.voteCount > len(rf.peers)/2 {
-		rf.mu.Lock()
 		rf.role = ROLE_LEADER
-		rf.mu.Unlock()
+
+		//当选出一个新 leader 时，该 leader 将所有 nextIndex 的值都初始化为自己最后一个日志条目的 index 加1
+		rf.nextIndex = make([]int, len(rf.peers))
+		for i, _ := range rf.nextIndex {
+			rf.nextIndex[i] = len(rf.log) - 1 + 1
+		}
 		DPrintf("%v-成为leader", rf.me)
 	}
 
@@ -220,12 +284,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.votedFor = -1
 	rf.role = ROLE_FOLLOWER
-	rf.log = make([]interface{}, 2)
+	rf.log = append(rf.log, Entry{})
 	// Your initialization code here (2A, 2B, 2C).
-	rf.nextIndex = make([]int, len(rf.peers))
-	for i, _ := range rf.nextIndex {
-		rf.nextIndex[i] = 1
-	}
+
 	rf.matchIndex = make([]int, len(rf.peers))
 
 	// initialize from state persisted before a crash
@@ -285,6 +346,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	go func() {
 		for {
+
 			switch rf.role {
 			case ROLE_LEADER:
 				args := &AppendEntriesArgs{
@@ -294,12 +356,56 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				reply := &AppendEntriesReply{}
 				for i, _ := range rf.peers {
 					if i != rf.me {
+						server := i
+						if rf.lastLogIndex() >= rf.nextIndex[server] {
+							DPrintf("nextIndex %v log %v", rf.nextIndex, rf.log)
+							args.Entries = rf.log[rf.nextIndex[server]:]
+						}
 
+						//继续比对,直到找到第一个一致的元素
+						DPrintf("%v nextIndex out of range check:%v %v", rf.me, rf.nextIndex, server)
+						args.PrevLogIndex = rf.nextIndex[server] - 1
+						args.Term = rf.currentTerm
+						args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
+						args.LeaderCommitIndex = rf.commitIndex
+						args.LeaderId = rf.me
 						go rf.sendAppendEntries(i, args, reply)
 					}
 				}
 
 			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	go func() {
+		for {
+
+			//一旦创建该日志条目的 leader 将它复制到过半的服务器上，该日志条目就会被提交
+			//同时，leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
+			// rules for servers 最后一条
+			//if exists an N >commitIndex ,
+			N := rf.commitIndex + 1
+			// majority of matchIndex[i] >= N , log.Term=currentTerm ,
+			majority := 0
+
+			for i, index := range rf.matchIndex {
+				if rf.matchIndex[i] >= N && rf.log[index].Term == rf.currentTerm {
+					majority++
+				}
+			}
+			if majority >= 2 {
+				DPrintf("matchIndex %v", rf.matchIndex)
+			}
+
+			//set commitIndex=N
+			if majority > len(rf.peers)/2 {
+				rf.commitIndex = N
+			}
+
+			//Follower 一旦知道某个日志条目已经被提交就会将该日志条目应用到自己的本地状态机中
+			// 所有committed 但未 applied 的 Entry
+			rf.applyCommitIndexLog(applyCh)
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
@@ -365,33 +471,34 @@ func (rf *Raft) readPersist(data []byte) {
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
+// agreement on the next Command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
 // agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
+// Command will ever be committed to the Raft log, since the leader
 // may fail or lose an election. even if the Raft instance has been killed,
 // this function should return gracefully.
 //
-// the first return value is the index that the command will appear at
+// the first return value is the index that the Command will appear at
 // if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
+// Term. the third return value is true if this server believes it is
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	// Your code here (2B).
-	if len(rf.log) == 0 {
-		//初始index 为 1
-		rf.log[1] = command
-		rf.lastApplied = 1
-	} else {
-		rf.log = append(rf.log, command)
-		rf.lastApplied++
-	}
-
+	isLeader := rf.role == ROLE_LEADER
 	index := -1
 	term := rf.currentTerm
-	isLeader := rf.role == ROLE_LEADER
+
+	if isLeader {
+
+		rf.log = append(rf.log, Entry{command, rf.currentTerm})
+		index = rf.lastLogIndex()
+	}
+
+	DPrintf("%v 客户端请求:%v leader:%v index:%v", rf.me, command, isLeader, index)
 	return index, term, isLeader
 }
 
@@ -414,4 +521,22 @@ func (rf *Raft) Kill() {
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead)
 	return z == 1
+}
+
+func (rf *Raft) lastLogIndex() int {
+	return len(rf.log) - 1
+}
+
+func (rf *Raft) lastLogTerm() int {
+	return rf.log[rf.lastLogIndex()].Term
+}
+
+func (rf *Raft) applyCommitIndexLog(applyCh chan ApplyMsg) {
+	//DPrintf("%v commitIndex%v lastApplied%v", rf.me, rf.commitIndex, rf.lastApplied)
+	for rf.commitIndex > rf.lastApplied {
+
+		rf.lastApplied++
+		DPrintf("%v write to applyCh %v , commitIndex:%v", rf.me, rf.log[rf.lastApplied], rf.commitIndex)
+		applyCh <- ApplyMsg{Command: rf.log[rf.lastApplied].Command, CommandIndex: rf.lastApplied, CommandValid: true}
+	}
 }
