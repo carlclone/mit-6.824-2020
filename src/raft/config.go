@@ -369,7 +369,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 		}
 
 		cfg.mu.Lock()
-		DPrintf("nCommited:%v %v %v", i, index, cfg.logs)
+		//DPrintf("nCommited:%v %v %v", i, index, cfg.logs)
 		cmd1, ok := cfg.logs[i][index]
 		cfg.mu.Unlock()
 

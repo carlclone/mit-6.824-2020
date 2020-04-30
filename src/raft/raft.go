@@ -140,7 +140,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.log = append(rf.log, entry)
 	}
 
-	DPrintf("%v 处理后的日志 %v", rf.me, rf.log)
+	//DPrintf("%v 处理后的日志 %v", rf.me, rf.log)
 
 	//5 follower 更新 commitIndex
 	if args.LeaderCommitIndex > rf.commitIndex {
