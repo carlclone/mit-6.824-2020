@@ -63,7 +63,9 @@ type Raft struct {
 
 type Entry struct {
 	command interface{}
-	term    int
+	//任期号用来检测多个日志副本之间的不一致情况
+	//Leader 在特定的任期号内的一个日志索引处最多创建一个日志条目，同时日志条目在日志中的位置也从来不会改变。该点保证了上面的第一条特性。
+	term int
 }
 
 //请求结构
@@ -107,19 +109,25 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	//2
+	//2  leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
+	//在发送 AppendEntries RPC 的时候，leader 会将前一个日志条目的索引位置和任期号包含在里面。
+	// 如果 follower 在它的日志中找不到包含相同索引位置和任期号的条目，那么他就会拒绝该新的日志条目。
 	if len(rf.log)-1 < args.PrevLogIndex {
 		return
 	}
 
+	//如果 follower 的日志和 leader 的不一致，那么下一次 AppendEntries RPC 中的一致性检查就会失败。
 	prevEntry := rf.log[args.PrevLogIndex]
 	if prevEntry.term != args.PrevLogTerm {
 		return
 	}
 
-	//3
+	//3  follower 中跟 leader 冲突的日志条目会被 leader 的日志条目覆盖
+	//AppendEntries RPC 就会成功，将 follower 中跟 leader 冲突的日志条目全部删除然后追加 leader 中的日志条目
+	//这步只需要删除
 
-	//4
+	//4 append any new entries not already in the log 然后追加 leader 中的日志条目,如果有需要追加的日志条目的话
+	//这步是追加(和覆盖)
 
 	//5
 	if args.LeaderCommitIndex > rf.commitIndex {
@@ -170,7 +178,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	//2 前半句
-	//后半句 : Raft 通过比较两份日志中最后一条日志条目的索引值和任期号来定义谁的日志比较新。
+	//后半句 :
+	//Raft 使用投票的方式来阻止 candidate 赢得选举除非该 candidate 包含了所有已经提交的日志条目
+	// Raft 通过比较两份日志中最后一条日志条目的索引值和任期号来定义谁的日志比较新。
 	// 如果两份日志最后条目的任期号不同，那么任期号大的日志更新。
 	// 如果两份日志最后条目的任期号相同，那么日志较长的那个更新。
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
@@ -191,6 +201,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
+	//在被 follower 拒绝之后，leaer 就会减小 nextIndex 值并重试 AppendEntries RPC
 	if !reply.Success {
 		rf.nextIndex[server]--
 	}
@@ -239,6 +250,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 		rf.mu.Lock()
 		rf.role = ROLE_LEADER
 
+		//当选出一个新 leader 时，该 leader 将所有 nextIndex 的值都初始化为自己最后一个日志条目的 index 加1
 		rf.nextIndex = make([]int, len(rf.peers))
 		for i, _ := range rf.nextIndex {
 			rf.nextIndex[i] = len(rf.log) - 1 + 1
@@ -345,6 +357,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					}
 				}
 
+				//一旦创建该日志条目的 leader 将它复制到过半的服务器上，该日志条目就会被提交
+				//同时，leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
+
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
@@ -352,6 +367,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	go func() {
 		for {
+
+			//Follower 一旦知道某个日志条目已经被提交就会将该日志条目应用到自己的本地状态机中
+
 			// 所有committed 但未 applied 的 Entry
 			rf.applyCommitIndexLog(applyCh)
 			time.Sleep(20 * time.Millisecond)
