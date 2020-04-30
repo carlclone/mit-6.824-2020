@@ -100,6 +100,9 @@ type RequestVoteReply struct {
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	rf.receiveAppendEntries <- true
 
 	DPrintf("开始处理心跳请求 %v %v %v", rf.me, args, reply)
@@ -151,16 +154,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Success = true
 	//rules for all server (reqs and response)
 	if args.Term > rf.currentTerm {
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
 	}
 
 	if args.Term == rf.currentTerm && rf.role == ROLE_CANDIDATE {
-		rf.mu.Lock()
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
 	}
 
 	DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
@@ -168,6 +167,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
 	rf.receiveVoteReqs <- true
 
@@ -180,11 +182,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//rules for all server (reqs and response)
 	if args.Term > rf.currentTerm {
 		DPrintf("%v 角色%v 收到新的term,更新term", rf.me, rf.role)
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
 		rf.votedFor = -1
-		rf.mu.Unlock()
 	}
 
 	//2 前半句
@@ -207,6 +207,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	//在被 follower 拒绝之后，leaer 就会减小 nextIndex 值并重试 AppendEntries RPC
 	if !reply.Success {
 		rf.nextIndex[server]--
@@ -215,10 +218,8 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	//rules for all server (reqs and response)
 	if reply.Term > rf.currentTerm {
 		DPrintf("%v %v 收到新term", rf.me, rf.role)
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
 	}
 
 	if reply.Success {
@@ -235,25 +236,23 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	DPrintf("%v发出投票请求 %v %v", rf.me, args, reply)
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	//rules for all server (reqs and response)
 	if reply.Term > rf.currentTerm {
-		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
 	}
 
 	if ok {
 		if reply.VoteGranted {
-			rf.mu.Lock()
 			rf.voteCount++
-			rf.mu.Unlock()
 			DPrintf("%v 获得投票数%v", rf.me, rf.voteCount)
 		}
 	}
 
 	if rf.voteCount > len(rf.peers)/2 {
-		rf.mu.Lock()
 		rf.role = ROLE_LEADER
 
 		//当选出一个新 leader 时，该 leader 将所有 nextIndex 的值都初始化为自己最后一个日志条目的 index 加1
@@ -261,7 +260,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 		for i, _ := range rf.nextIndex {
 			rf.nextIndex[i] = len(rf.log) - 1 + 1
 		}
-		rf.mu.Unlock()
 		DPrintf("%v-成为leader", rf.me)
 	}
 
@@ -365,6 +363,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						}
 
 						//继续比对,直到找到第一个一致的元素
+						DPrintf("%v nextIndex out of range check:%v %v", rf.me, rf.nextIndex, server)
 						args.PrevLogIndex = rf.nextIndex[server] - 1
 						args.Term = rf.currentTerm
 						args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
@@ -486,6 +485,8 @@ func (rf *Raft) readPersist(data []byte) {
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	// Your code here (2B).
 	isLeader := rf.role == ROLE_LEADER
 	index := -1
@@ -531,7 +532,7 @@ func (rf *Raft) lastLogTerm() int {
 }
 
 func (rf *Raft) applyCommitIndexLog(applyCh chan ApplyMsg) {
-	DPrintf("%v commitIndex%v lastApplied%v", rf.me, rf.commitIndex, rf.lastApplied)
+	//DPrintf("%v commitIndex%v lastApplied%v", rf.me, rf.commitIndex, rf.lastApplied)
 	for rf.commitIndex > rf.lastApplied {
 
 		rf.lastApplied++
