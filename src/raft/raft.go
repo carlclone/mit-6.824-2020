@@ -190,7 +190,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// 如果两份日志最后条目的任期号不同，那么任期号大的日志更新。
 	// 如果两份日志最后条目的任期号相同，那么日志较长的那个更新。
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
-		(args.LastLogTerm > rf.lastLogTerm() || (args.LastLogTerm == rf.lastLogTerm() && args.LastLogIndex > rf.lastLogIndex())) {
+		(args.LastLogTerm > rf.lastLogTerm() || (args.LastLogTerm == rf.lastLogTerm() && args.LastLogIndex >= rf.lastLogIndex())) {
 		reply.VoteGranted = true
 	}
 
