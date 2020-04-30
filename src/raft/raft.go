@@ -102,6 +102,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.receiveAppendEntries <- true
 
+	DPrintf("开始处理心跳请求 %v %v %v", rf.me, args, reply)
 	reply.Success = false
 	// 1
 	if args.Term < rf.currentTerm {
@@ -113,12 +114,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//在发送 AppendEntries RPC 的时候，leader 会将前一个日志条目的索引位置和任期号包含在里面。
 	// 如果 follower 在它的日志中找不到包含相同索引位置和任期号的条目，那么他就会拒绝该新的日志条目。
 	if len(rf.log)-1 < args.PrevLogIndex {
+		DPrintf("AE2")
 		return
 	}
-
 	//如果 follower 的日志和 leader 的不一致，那么下一次 AppendEntries RPC 中的一致性检查就会失败。
 	prevEntry := rf.log[args.PrevLogIndex]
 	if prevEntry.Term != args.PrevLogTerm {
+		DPrintf("log 不一致")
 		return
 	}
 
@@ -134,6 +136,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	for _, entry := range args.Entries {
 		rf.log = append(rf.log, entry)
 	}
+
+	DPrintf("%v 处理后的日志 %v", rf.me, rf.log)
 
 	//5 follower 更新 commitIndex
 	if args.LeaderCommitIndex > rf.commitIndex {
@@ -159,7 +163,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.mu.Unlock()
 	}
 
-	//DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
+	DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
 	return
 }
 
@@ -200,10 +204,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 //发送请求
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	//DPrintf("发出心跳请求 %v %v %v", rf.me, args, reply)
-
 	if rf.lastLogIndex() >= rf.nextIndex[server] {
+		DPrintf("nextIndex %v log %v", rf.nextIndex, rf.log)
 		args.Entries = rf.log[rf.nextIndex[server]:]
 	}
+	args.PrevLogIndex = rf.nextIndex[server] - 1
+	args.Term = rf.currentTerm
+	args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
+	args.LeaderCommitIndex = rf.commitIndex
+	args.LeaderId = rf.me
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
@@ -370,13 +379,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				N := rf.commitIndex + 1
 				// majority of matchIndex[i] >= N , log.Term=currentTerm ,
 				majority := 0
+
 				for i, index := range rf.matchIndex {
 					if rf.matchIndex[i] >= N && rf.log[index].Term == rf.currentTerm {
 						majority++
 					}
 				}
+				if majority >= 2 {
+					DPrintf("matchIndex %v", rf.matchIndex)
+				}
+
 				//set commitIndex=N
-				if majority/2 > len(rf.peers) {
+				if majority > len(rf.peers)/2 {
 					rf.commitIndex = N
 				}
 
@@ -476,10 +490,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	term := rf.currentTerm
 
 	if isLeader {
+
 		rf.log = append(rf.log, Entry{command, rf.currentTerm})
 		index = rf.lastLogIndex()
 	}
 
+	DPrintf("%v 客户端请求:%v leader:%v index:%v", rf.me, command, isLeader, index)
 	return index, term, isLeader
 }
 
@@ -513,8 +529,11 @@ func (rf *Raft) lastLogTerm() int {
 }
 
 func (rf *Raft) applyCommitIndexLog(applyCh chan ApplyMsg) {
+	DPrintf("%v commitIndex%v lastApplied%v", rf.me, rf.commitIndex, rf.lastApplied)
 	for rf.commitIndex > rf.lastApplied {
+
 		rf.lastApplied++
-		applyCh <- ApplyMsg{Command: rf.log[rf.lastApplied], CommandIndex: rf.lastApplied}
+		DPrintf("%v write to applyCh %v , commitIndex:%v", rf.me, rf.log[rf.lastApplied], rf.commitIndex)
+		applyCh <- ApplyMsg{Command: rf.log[rf.lastApplied].Command, CommandIndex: rf.lastApplied, CommandValid: true}
 	}
 }

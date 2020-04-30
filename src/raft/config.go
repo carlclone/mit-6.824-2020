@@ -369,6 +369,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 		}
 
 		cfg.mu.Lock()
+		DPrintf("nCommited:%v %v %v", i, index, cfg.logs)
 		cmd1, ok := cfg.logs[i][index]
 		cfg.mu.Unlock()
 
@@ -445,6 +446,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 				index1, _, ok := rf.Start(cmd)
 				if ok {
 					index = index1
+					DPrintf("testIndex %v", index)
 					break
 				}
 			}
@@ -456,9 +458,12 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
+				DPrintf("nd:%v cmd1:%v index:%v", nd, cmd1, index)
 				if nd > 0 && nd >= expectedServers {
 					// committed
+					DPrintf("commited %v %v", cmd1, cmd)
 					if cmd1 == cmd {
+						DPrintf("same cmd")
 						// and it was the Command we submitted.
 						return index
 					}
