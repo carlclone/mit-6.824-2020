@@ -204,17 +204,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 //发送请求
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	//DPrintf("发出心跳请求 %v %v %v", rf.me, args, reply)
-	if rf.lastLogIndex() >= rf.nextIndex[server] {
-		DPrintf("nextIndex %v log %v", rf.nextIndex, rf.log)
-		args.Entries = rf.log[rf.nextIndex[server]:]
-	}
-
-	//继续比对,直到找到第一个一致的元素
-	args.PrevLogIndex = rf.nextIndex[server] - 1
-	args.Term = rf.currentTerm
-	args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
-	args.LeaderCommitIndex = rf.commitIndex
-	args.LeaderId = rf.me
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
@@ -369,7 +358,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				reply := &AppendEntriesReply{}
 				for i, _ := range rf.peers {
 					if i != rf.me {
+						server := i
+						if rf.lastLogIndex() >= rf.nextIndex[server] {
+							DPrintf("nextIndex %v log %v", rf.nextIndex, rf.log)
+							args.Entries = rf.log[rf.nextIndex[server]:]
+						}
 
+						//继续比对,直到找到第一个一致的元素
+						args.PrevLogIndex = rf.nextIndex[server] - 1
+						args.Term = rf.currentTerm
+						args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
+						args.LeaderCommitIndex = rf.commitIndex
+						args.LeaderId = rf.me
 						go rf.sendAppendEntries(i, args, reply)
 					}
 				}
