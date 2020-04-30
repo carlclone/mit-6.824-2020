@@ -208,6 +208,8 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		DPrintf("nextIndex %v log %v", rf.nextIndex, rf.log)
 		args.Entries = rf.log[rf.nextIndex[server]:]
 	}
+
+	//继续比对,直到找到第一个一致的元素
 	args.PrevLogIndex = rf.nextIndex[server] - 1
 	args.Term = rf.currentTerm
 	args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
