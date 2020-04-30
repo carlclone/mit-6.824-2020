@@ -7,10 +7,10 @@ package raft
 //
 // rf = Make(...)
 //   create a new Raft server.
-// rf.Start(command interface{}) (index, term, isleader)
+// rf.Start(Command interface{}) (index, Term, isleader)
 //   start agreement on a new log entry
-// rf.GetState() (term, isLeader)
-//   ask a Raft for its current term, and whether it thinks it is leader
+// rf.GetState() (Term, isLeader)
+//   ask a Raft for its current Term, and whether it thinks it is leader
 // ApplyMsg
 //   each time a new entry is committed to the log, each Raft peer
 //   should send an ApplyMsg to the service (or tester)
@@ -62,15 +62,15 @@ type Raft struct {
 }
 
 type Entry struct {
-	command interface{}
+	Command interface{}
 	//任期号用来检测多个日志副本之间的不一致情况
 	//Leader 在特定的任期号内的一个日志索引处最多创建一个日志条目，同时日志条目在日志中的位置也从来不会改变。该点保证了上面的第一条特性。
-	term int
+	Term int
 }
 
 //请求结构
 type AppendEntriesArgs struct {
-	Term              int //当前 term
+	Term              int //当前 Term
 	LeaderId          int
 	PrevLogIndex      int //上一个log的index
 	PrevLogTerm       int //上一个log的term
@@ -118,7 +118,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	//如果 follower 的日志和 leader 的不一致，那么下一次 AppendEntries RPC 中的一致性检查就会失败。
 	prevEntry := rf.log[args.PrevLogIndex]
-	if prevEntry.term != args.PrevLogTerm {
+	if prevEntry.Term != args.PrevLogTerm {
 		return
 	}
 
@@ -368,10 +368,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				// rules for servers 最后一条
 				//if exists an N >commitIndex ,
 				N := rf.commitIndex + 1
-				// majority of matchIndex[i] >= N , log.term=currentTerm ,
+				// majority of matchIndex[i] >= N , log.Term=currentTerm ,
 				majority := 0
 				for i, index := range rf.matchIndex {
-					if rf.matchIndex[i] >= N && rf.log[index].term == rf.currentTerm {
+					if rf.matchIndex[i] >= N && rf.log[index].Term == rf.currentTerm {
 						majority++
 					}
 				}
@@ -456,16 +456,16 @@ func (rf *Raft) readPersist(data []byte) {
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
+// agreement on the next Command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
 // agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
+// Command will ever be committed to the Raft log, since the leader
 // may fail or lose an election. even if the Raft instance has been killed,
 // this function should return gracefully.
 //
-// the first return value is the index that the command will appear at
+// the first return value is the index that the Command will appear at
 // if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
+// Term. the third return value is true if this server believes it is
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
@@ -509,7 +509,7 @@ func (rf *Raft) lastLogIndex() int {
 }
 
 func (rf *Raft) lastLogTerm() int {
-	return rf.log[rf.lastLogIndex()].term
+	return rf.log[rf.lastLogIndex()].Term
 }
 
 func (rf *Raft) applyCommitIndexLog(applyCh chan ApplyMsg) {
