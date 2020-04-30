@@ -367,8 +367,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				//同时，leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
 				// rules for servers 最后一条
 				//if exists an N >commitIndex ,
+				N := rf.commitIndex + 1
 				// majority of matchIndex[i] >= N , log.term=currentTerm ,
+				majority := 0
+				for i, index := range rf.matchIndex {
+					if rf.matchIndex[i] >= N && rf.log[index].term == rf.currentTerm {
+						majority++
+					}
+				}
 				//set commitIndex=N
+				if majority/2 > len(rf.peers) {
+					rf.commitIndex = N
+				}
 
 			}
 			time.Sleep(20 * time.Millisecond)
