@@ -101,6 +101,31 @@ func (rf *Raft) becomFollower(term int) {
 	rf.mu.Unlock()
 }
 
+func (rf *Raft) becomeCandidate() {
+	rf.mu.Lock()
+	rf.role = ROLE_CANDIDATE
+	rf.currentTerm++
+	rf.votedFor = rf.me
+	rf.voteCount = 1
+	rf.mu.Unlock()
+
+	DPrintf("%v 开始选举 任期%v", rf.me, rf.currentTerm)
+	args := &RequestVoteArgs{
+		Term:        rf.currentTerm,
+		CandidateId: rf.me,
+	}
+
+	for i, _ := range rf.peers {
+		if i != rf.me {
+			go func(i int) {
+				reply := &RequestVoteReply{}
+				rf.sendRequestVote(i, args, reply)
+			}(i)
+
+		}
+	}
+}
+
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
@@ -114,12 +139,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	reply.Success = true
-
-	if args.Term == rf.currentTerm && rf.role == ROLE_CANDIDATE {
-		rf.mu.Lock()
-		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
-	}
 
 	//DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
 	return
@@ -222,40 +241,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case <-rf.receiveVoteReqs:
 				case <-time.After(time.Duration((rand.Int63())%1500+300) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
 					DPrintf("%v follower超时->candidate ", rf.me)
-					rf.mu.Lock()
-					rf.role = ROLE_CANDIDATE
-					rf.mu.Unlock()
+					rf.becomeCandidate()
 				}
 
 			case ROLE_CANDIDATE:
-				rf.mu.Lock()
-				rf.currentTerm++
-				rf.votedFor = me
-				rf.voteCount = 1
-				rf.mu.Unlock()
-
-				DPrintf("%v 开始选举 任期%v", rf.me, rf.currentTerm)
-				args := &RequestVoteArgs{
-					Term:        rf.currentTerm,
-					CandidateId: me,
-				}
-
-				for i, _ := range rf.peers {
-					if i != rf.me {
-						go func(i int) {
-							reply := &RequestVoteReply{}
-							rf.sendRequestVote(i, args, reply)
-						}(i)
-
-					}
-				}
-
 				select {
 				case <-rf.receiveAppendEntries:
-					rf.mu.Lock()
-					rf.role = ROLE_FOLLOWER
-					rf.mu.Unlock()
 				case <-time.After(time.Duration((rand.Int63())%1500+300) * time.Millisecond):
+					rf.becomeCandidate()
 				}
 			case ROLE_LEADER:
 				time.Sleep(20 * time.Millisecond)
