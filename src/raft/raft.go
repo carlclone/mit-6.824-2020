@@ -89,11 +89,17 @@ type RequestVoteReply struct {
 }
 
 func (rf *Raft) othersHasBiggerTerm(othersTerm int, currentTerm int) bool {
-	DPrintf("received bigger term %v %v %v", rf.me, othersTerm, currentTerm)
+	rf.print("received bigger term  %v %v", othersTerm, currentTerm)
 	return othersTerm > currentTerm
 }
 
-func (rf *Raft) becomFollower(term int) {
+func (rf *Raft) print(format string, a ...interface{}) {
+	format = "server%v " + format
+	a = append(a, rf.me)
+	DPrintf(format, a...)
+}
+
+func (rf *Raft) becomeFollower(term int) {
 	rf.mu.Lock()
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
@@ -109,7 +115,7 @@ func (rf *Raft) becomeCandidate() {
 	rf.voteCount = 1
 	rf.mu.Unlock()
 
-	DPrintf("%v 开始选举 任期%v", rf.me, rf.currentTerm)
+	DPrintf("%v start election term:%v", rf.me, rf.currentTerm)
 	args := &RequestVoteArgs{
 		Term:        rf.currentTerm,
 		CandidateId: rf.me,
@@ -133,21 +139,33 @@ func (rf *Raft) becomeLeader() {
 	rf.mu.Unlock()
 }
 
+func (rf *Raft) sendHeartBeats() {
+	args := &AppendEntriesArgs{
+		Term:     rf.currentTerm,
+		LeaderId: rf.me,
+	}
+	reply := &AppendEntriesReply{}
+	for i, _ := range rf.peers {
+		if i != rf.me {
+			go rf.sendAppendEntries(i, args, reply)
+		}
+	}
+}
+
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
 	rf.receiveAppendEntries <- true
 
 	reply.Success = false
-	// 1
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
-		rf.becomFollower(args.Term)
+		rf.becomeFollower(args.Term)
 		return
 	}
 
 	reply.Success = true
 
-	//DPrintf("心跳请求处理完毕 %v %v %v", rf.me, args, reply)
+	rf.print("heartbeat handle finish  %v %v", args, reply)
 	return
 }
 
@@ -155,9 +173,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.receiveVoteReqs <- true
 
-	//1
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
-		rf.becomFollower(args.Term)
+		rf.becomeFollower(args.Term)
 	}
 
 	//2 前半句
@@ -165,12 +182,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 	}
 
-	DPrintf("%v的投票请求处理完毕  %v %v", args.CandidateId, args, reply)
+	rf.print("vote request from %v", args.CandidateId)
 }
 
 //发送请求
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	//DPrintf("发出心跳请求 %v %v %v", rf.me, args, reply)
+	rf.print("send AppendEntries")
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	if !reply.Success {
@@ -178,7 +195,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	}
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
-		rf.becomFollower(reply.Term)
+		rf.becomeFollower(reply.Term)
 		return ok
 	}
 
@@ -188,11 +205,11 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // 发送请求
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 
-	DPrintf("%v发出投票请求 %v %v", rf.me, args, reply)
+	rf.print("sendRequestVote")
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
-		rf.becomFollower(reply.Term)
+		rf.becomeFollower(reply.Term)
 	}
 
 	if ok {
@@ -200,13 +217,12 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 			rf.mu.Lock()
 			rf.voteCount++
 			rf.mu.Unlock()
-			DPrintf("%v 获得投票数%v", rf.me, rf.voteCount)
+			rf.print("voteCount:%v", rf.voteCount)
 		}
 	}
 
 	if rf.voteCount > len(rf.peers)/2 {
 		rf.becomeLeader()
-
 	}
 
 	return ok
@@ -265,18 +281,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		for {
 			switch rf.role {
 			case ROLE_LEADER:
-				args := &AppendEntriesArgs{
-					Term:     rf.currentTerm,
-					LeaderId: me,
-				}
-				reply := &AppendEntriesReply{}
-				for i, _ := range rf.peers {
-					if i != rf.me {
-
-						go rf.sendAppendEntries(i, args, reply)
-					}
-				}
-
+				rf.sendHeartBeats()
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
