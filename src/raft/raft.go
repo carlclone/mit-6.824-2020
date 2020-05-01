@@ -131,6 +131,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//AppendEntries RPC 就会成功，将 follower 中跟 leader 冲突的日志条目全部删除然后追加 leader 中的日志条目
 	//这步只需要删除
 	// delete prevLogIndex+1 ~ logendIndex
+	DPrintf("entries:%v", args.Entries)
 	rf.log = rf.log[:args.PrevLogIndex+1]
 
 	//4 append any new entries not already in the log 然后追加 leader 中的日志条目,如果有需要追加的日志条目的话
@@ -139,7 +140,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	for _, entry := range args.Entries {
 		rf.log = append(rf.log, entry)
 	}
-
+	DPrintf("处理 追加后的log %v", rf.log)
 	//DPrintf("%v 处理后的日志 %v", rf.me, rf.log)
 
 	//5 follower 更新 commitIndex
@@ -211,6 +212,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	defer rf.mu.Unlock()
 
 	//在被 follower 拒绝之后，leaer 就会减小 nextIndex 值并重试 AppendEntries RPC
+	//TODO;这里有bug
 	if !reply.Success {
 		rf.nextIndex[server]--
 	}
@@ -385,27 +387,27 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//同时，leader 日志中该日志条目之前的所有日志条目也都会被提交 ，包括由其他 leader 创建的条目
 			// rules for servers 最后一条
 			//if exists an N >commitIndex ,
+			rf.mu.Lock()
 			N := rf.commitIndex + 1
 			// majority of matchIndex[i] >= N , log.Term=currentTerm ,
-			majority := 0
+			majority := 1
 
 			for i, index := range rf.matchIndex {
 				if rf.matchIndex[i] >= N && rf.log[index].Term == rf.currentTerm {
 					majority++
 				}
 			}
-			if majority >= 2 {
-				DPrintf("matchIndex %v", rf.matchIndex)
-			}
 
 			//set commitIndex=N
 			if majority > len(rf.peers)/2 {
 				rf.commitIndex = N
 			}
-
+			DPrintf("majority is %v", majority)
+			rf.mu.Unlock()
 			//Follower 一旦知道某个日志条目已经被提交就会将该日志条目应用到自己的本地状态机中
 			// 所有committed 但未 applied 的 Entry
 			rf.applyCommitIndexLog(applyCh)
+
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()

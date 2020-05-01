@@ -446,7 +446,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 				index1, _, ok := rf.Start(cmd)
 				if ok {
 					index = index1
-					DPrintf("testIndex %v", index)
+					//DPrintf("testIndex %v", index)
 					break
 				}
 			}

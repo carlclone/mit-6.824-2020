@@ -175,6 +175,8 @@ func TestFailAgree2B(t *testing.T) {
 	leader := cfg.checkOneLeader()
 	cfg.disconnect((leader + 1) % servers)
 
+	fmt.Printf("断开的f %v", (leader+1)%servers)
+
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
 	cfg.one(102, servers-1, false)
@@ -183,15 +185,20 @@ func TestFailAgree2B(t *testing.T) {
 	cfg.one(104, servers-1, false)
 	cfg.one(105, servers-1, false)
 
+	DPrintf("断开一个follower , 正常复制通过")
+
 	// re-connect
 	cfg.connect((leader + 1) % servers)
 
+	DPrintf("已重连follower %v", (leader+1)%servers)
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
 	// on new commands.
 	cfg.one(106, servers, true)
 	time.Sleep(RaftElectionTimeout)
 	cfg.one(107, servers, true)
+
+	DPrintf("重连后复制通过")
 
 	cfg.end()
 }
