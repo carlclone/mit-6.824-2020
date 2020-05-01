@@ -126,6 +126,13 @@ func (rf *Raft) becomeCandidate() {
 	}
 }
 
+func (rf *Raft) becomeLeader() {
+	DPrintf("%v become leader", rf.me)
+	rf.mu.Lock()
+	rf.role = ROLE_LEADER
+	rf.mu.Unlock()
+}
+
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
@@ -198,10 +205,8 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	}
 
 	if rf.voteCount > len(rf.peers)/2 {
-		rf.mu.Lock()
-		rf.role = ROLE_LEADER
-		rf.mu.Unlock()
-		DPrintf("%v-成为leader", rf.me)
+		rf.becomeLeader()
+
 	}
 
 	return ok
@@ -230,7 +235,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	DPrintf("创建peer")
+	DPrintf("create peer")
 
 	go func() {
 		for {
@@ -240,7 +245,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case <-rf.receiveAppendEntries:
 				case <-rf.receiveVoteReqs:
 				case <-time.After(time.Duration((rand.Int63())%1500+300) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
-					DPrintf("%v follower超时->candidate ", rf.me)
+					DPrintf("%v follower timeout ,start election ", rf.me)
 					rf.becomeCandidate()
 				}
 
