@@ -88,6 +88,19 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
+func (rf *Raft) othersHasBiggerTerm(othersTerm int, currentTerm int) bool {
+	DPrintf("received bigger term %v %v %v", rf.me, othersTerm, currentTerm)
+	return othersTerm > currentTerm
+}
+
+func (rf *Raft) becomFollower(term int) {
+	rf.mu.Lock()
+	rf.role = ROLE_FOLLOWER
+	rf.votedFor = -1
+	rf.currentTerm = term
+	rf.mu.Unlock()
+}
+
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
@@ -95,19 +108,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	reply.Success = false
 	// 1
-	if args.Term < rf.currentTerm {
-		DPrintf("term过期请求 %v %v %v", rf.me, args, reply)
+	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
+		rf.becomFollower(args.Term)
 		return
 	}
 
 	reply.Success = true
-	//rules for all server (reqs and response)
-	if args.Term > rf.currentTerm {
-		rf.mu.Lock()
-		rf.currentTerm = args.Term
-		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
-	}
 
 	if args.Term == rf.currentTerm && rf.role == ROLE_CANDIDATE {
 		rf.mu.Lock()
@@ -124,19 +130,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.receiveVoteReqs <- true
 
 	//1
-	if args.Term < rf.currentTerm {
-		DPrintf("term过期请求 %v %v %v", rf.me, args, reply)
-		return
-	}
-
-	//rules for all server (reqs and response)
-	if args.Term > rf.currentTerm {
-		DPrintf("%v 角色%v 收到新的term,更新term", rf.me, rf.role)
-		rf.mu.Lock()
-		rf.currentTerm = args.Term
-		rf.role = ROLE_FOLLOWER
-		rf.votedFor = -1
-		rf.mu.Unlock()
+	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
+		rf.becomFollower(args.Term)
 	}
 
 	//2 前半句
@@ -156,13 +151,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		return ok
 	}
 
-	//rules for all server (reqs and response)
-	if reply.Term > rf.currentTerm {
-		DPrintf("%v %v 收到新term", rf.me, rf.role)
-		rf.mu.Lock()
-		rf.currentTerm = args.Term
-		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
+	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
+		rf.becomFollower(reply.Term)
+		return ok
 	}
 
 	return ok
@@ -174,12 +165,8 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	DPrintf("%v发出投票请求 %v %v", rf.me, args, reply)
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
-	//rules for all server (reqs and response)
-	if reply.Term > rf.currentTerm {
-		rf.mu.Lock()
-		rf.currentTerm = args.Term
-		rf.role = ROLE_FOLLOWER
-		rf.mu.Unlock()
+	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
+		rf.becomFollower(reply.Term)
 	}
 
 	if ok {
