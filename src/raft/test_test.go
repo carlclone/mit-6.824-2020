@@ -125,7 +125,8 @@ func TestBasicAgree2B(t *testing.T) {
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")
 		}
-
+		//每个 peer 尝试 start 一次 , 不重试
+		//判断返回的 index 是否一致 (log 里的 index)
 		xindex := cfg.one(index*100, servers, false)
 		if xindex != index {
 			t.Fatalf("got index %v but expected %v", xindex, index)

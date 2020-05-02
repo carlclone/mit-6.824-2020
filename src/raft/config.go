@@ -430,6 +430,8 @@ func (cfg *config) wait(index int, n int, startTerm int) interface{} {
 func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 	t0 := time.Now()
 	starts := 0
+
+	//开始start()
 	for time.Since(t0).Seconds() < 10 {
 		// try all the servers, maybe one is the leader.
 		index := -1
@@ -450,6 +452,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			}
 		}
 
+		//是 leader 的话会 append 到 log 里并且等待一段时间后期望能看到其他 peer 都已经复制
 		if index != -1 {
 			// somebody claimed to be the leader and to have
 			// submitted our command; wait a while for agreement.
@@ -458,6 +461,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 				nd, cmd1 := cfg.nCommitted(index)
 				if nd > 0 && nd >= expectedServers {
 					// committed
+					//都已经复制了并且命令也一致则通过
 					if cmd1 == cmd {
 						// and it was the command we submitted.
 						return index

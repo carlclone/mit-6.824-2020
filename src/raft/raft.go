@@ -19,155 +19,13 @@ package raft
 
 import (
 	"math/rand"
-	"strconv"
-	"sync"
+	"sync/atomic"
 	"time"
 )
-import "sync/atomic"
 import "labrpc"
 
 // import "bytes"
 // import "../labgob"
-
-const (
-	ROLE_FOLLOWER  = 1
-	ROLE_CANDIDATE = 2
-	ROLE_LEADER    = 3
-)
-
-type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
-	peers     []*labrpc.ClientEnd // RPC end points of all peers
-	persister *Persister          // Object to hold this peer's persisted state
-	me        int                 // this peer's index into peers[]
-	dead      int32               // set by Kill()
-
-	//persistent
-	currentTerm int
-	votedFor    int
-	log         []interface{}
-
-	//volatile
-	commitIndex int
-	lastApplied int
-
-	//volatile / only leader
-
-	//other
-	role                 int
-	voteCount            int
-	receiveAppendEntries chan bool
-	receiveVoteReqs      chan bool
-}
-
-//请求结构
-type AppendEntriesArgs struct {
-	Term              int //当前 term
-	LeaderId          int
-	PrevLogIndex      int //
-	PrevLogTerm       int
-	Entries           []interface{}
-	LeaderCommitIndex int
-}
-
-type AppendEntriesReply struct {
-	Term    int
-	Success bool
-}
-
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-	Term         int
-	CandidateId  int
-	LastLogIndex int
-	LastLogTerm  int
-}
-
-type RequestVoteReply struct {
-	// Your data here (2A).
-	Term        int
-	VoteGranted bool
-}
-
-func (rf *Raft) othersHasBiggerTerm(othersTerm int, currentTerm int) bool {
-	if othersTerm > currentTerm {
-		rf.print(LOG_ALL, "收到更大的 term  other%v curr%v", othersTerm, currentTerm)
-	}
-	return othersTerm > currentTerm
-}
-
-const (
-	LOG_ALL       = 0
-	LOG_VOTE      = 1
-	LOG_HEARTBEAT = 2
-)
-
-func (rf *Raft) print(level int, format string, a ...interface{}) {
-	if level == LOG_VOTE {
-		return
-	}
-	format = "server " + strconv.Itoa(rf.me) + format
-	DPrintf(format, a...)
-}
-
-func (rf *Raft) becomeFollower(term int) {
-	rf.mu.Lock()
-	rf.role = ROLE_FOLLOWER
-	rf.votedFor = -1
-	rf.currentTerm = term
-	rf.voteCount = 0
-	rf.mu.Unlock()
-	rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
-}
-
-func (rf *Raft) becomeCandidate() {
-	rf.print(LOG_ALL, "变成 candidate")
-	rf.mu.Lock()
-	rf.role = ROLE_CANDIDATE
-	rf.currentTerm++
-	rf.votedFor = rf.me
-	rf.voteCount = 1
-	rf.mu.Unlock()
-
-	DPrintf("%v 开始选举 任期:%v", rf.me, rf.currentTerm)
-	args := &RequestVoteArgs{
-		Term:        rf.currentTerm,
-		CandidateId: rf.me,
-	}
-
-	for i, _ := range rf.peers {
-		if i != rf.me {
-			go func(i int) {
-				reply := &RequestVoteReply{}
-				rf.sendRequestVote(i, args, reply)
-			}(i)
-
-		}
-	}
-}
-
-func (rf *Raft) becomeLeader() {
-	rf.print(LOG_ALL, "变成 leader")
-	rf.mu.Lock()
-	rf.role = ROLE_LEADER
-	rf.votedFor = -1
-	rf.voteCount = 0
-	rf.mu.Unlock()
-}
-
-func (rf *Raft) sendHeartBeats() {
-
-	args := &AppendEntriesArgs{
-		Term:     rf.currentTerm,
-		LeaderId: rf.me,
-	}
-	reply := &AppendEntriesReply{}
-	for i, _ := range rf.peers {
-		if i != rf.me {
-			go rf.sendAppendEntries(i, args, reply)
-		}
-	}
-}
 
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -185,9 +43,20 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	rf.print(LOG_HEARTBEAT, "成功处理心跳包")
+	if len(args.Entries) != 0 {
+		success := rf.comparePrevLog(args.PrevLogTerm, args.PrevLogIndex)
+		if success {
+			rf.appendLeadersLog(args.Entries)
+			reply.Success = true
+			reply.NextIndex = rf.lastLogIndex() + 1
+			reply.MatchIndex = rf.lastLogIndex()
+			reply.AppendSuccess = true
+		}
+	} else {
+		rf.print(LOG_HEARTBEAT, "成功处理心跳包")
+		reply.Success = true
+	}
 
-	reply.Success = true
 	reply.Term = rf.currentTerm
 	return
 }
@@ -219,12 +88,30 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	if rf.role != ROLE_LEADER {
 		return false
 	}
+
+	args.Entries = rf.serverNextEntriesToReplica(server)
+
+	if len(args.Entries) == 0 {
+		lastLog := rf.log[rf.lastLogIndex()]
+		args.PrevLogIndex = lastLog.Index
+		args.PrevLogTerm = lastLog.Term
+	} else {
+		prevIndex := args.Entries[0].Index - 1
+		args.PrevLogIndex = rf.log[prevIndex].Index
+		args.PrevLogTerm = rf.log[prevIndex].Term
+	}
+
 	rf.print(LOG_HEARTBEAT, "发送心跳包给%v 当前角色:%v", server, rf.role)
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
 		rf.becomeFollower(reply.Term)
 		return ok
+	}
+
+	if reply.AppendSuccess {
+		rf.nextIndex[server] = reply.NextIndex
+		rf.matchIndex[server] = reply.MatchIndex
 	}
 
 	return ok
@@ -280,6 +167,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
+	rf.log = append(rf.log, Entry{})
+
 	DPrintf("create peer")
 
 	go func() {
@@ -324,22 +213,124 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 }
 
-//
-// as each Raft peer becomes aware that successive log entries are
-// committed, the peer should send an ApplyMsg to the service (or
-// tester) on the same server, via the applyCh passed to Make(). set
-// CommandValid to true to indicate that the ApplyMsg contains a newly
-// committed log entry.
-//
-// in Lab 3 you'll want to send other kinds of messages (e.g.,
-// snapshots) on the applyCh; at that point you can add fields to
-// ApplyMsg, but set CommandValid to false for these other uses.
-//
-type ApplyMsg struct {
-	CommandValid bool
-	Command      interface{}
-	CommandIndex int
+func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	index := -1
+	term := -1
+	isLeader := rf.isLeader()
+
+	if isLeader {
+		index = rf.appendCommand(command)
+		term = rf.currentTerm
+	}
+
+	return index, term, isLeader
 }
+
+// ------------------------ helpers -----------------------
+
+func (rf *Raft) othersHasSmallTerm(othersTerm int, term int) bool {
+	if othersTerm < term {
+		rf.print(LOG_ALL, "收到过期 term other:%v curr:%v", othersTerm, term)
+	}
+
+	return othersTerm < term
+}
+
+func (rf *Raft) othersHasBiggerTerm(othersTerm int, currentTerm int) bool {
+	if othersTerm > currentTerm {
+		rf.print(LOG_ALL, "收到更大的 term  other%v curr%v", othersTerm, currentTerm)
+	}
+	return othersTerm > currentTerm
+}
+
+func (rf *Raft) isLeader() bool {
+	return rf.role == ROLE_LEADER
+}
+
+func (rf *Raft) becomeFollower(term int) {
+	rf.mu.Lock()
+	rf.role = ROLE_FOLLOWER
+	rf.votedFor = -1
+	rf.currentTerm = term
+	rf.voteCount = 0
+	rf.mu.Unlock()
+	rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
+}
+
+func (rf *Raft) becomeCandidate() {
+	rf.print(LOG_ALL, "变成 candidate")
+	rf.mu.Lock()
+	rf.role = ROLE_CANDIDATE
+	rf.currentTerm++
+	rf.votedFor = rf.me
+	rf.voteCount = 1
+	rf.mu.Unlock()
+
+	DPrintf("%v 开始选举 任期:%v", rf.me, rf.currentTerm)
+	args := &RequestVoteArgs{
+		Term:        rf.currentTerm,
+		CandidateId: rf.me,
+	}
+
+	for i, _ := range rf.peers {
+		if i != rf.me {
+			go func(i int) {
+				reply := &RequestVoteReply{}
+				rf.sendRequestVote(i, args, reply)
+			}(i)
+
+		}
+	}
+}
+
+func (rf *Raft) becomeLeader() {
+	rf.print(LOG_ALL, "变成 leader")
+	rf.mu.Lock()
+	rf.role = ROLE_LEADER
+	rf.votedFor = -1
+	rf.voteCount = 0
+
+	//复制阶段初始化
+	rf.matchIndex = make([]int, rf.peerCount())
+	rf.nextIndex = make([]int, rf.peerCount())
+	for i, _ := range rf.nextIndex {
+		rf.nextIndex[i] = 1
+	}
+
+	rf.mu.Unlock()
+}
+
+func (rf *Raft) peerCount() int {
+	return len(rf.peers)
+}
+
+func (rf *Raft) sendHeartBeats() {
+
+	args := &AppendEntriesArgs{
+		Term:     rf.currentTerm,
+		LeaderId: rf.me,
+	}
+
+	reply := &AppendEntriesReply{}
+	for i, _ := range rf.peers {
+		if i != rf.me {
+
+			go rf.sendAppendEntries(i, args, reply)
+		}
+	}
+}
+
+func (rf *Raft) lastLogIndex() int {
+	return len(rf.log) - 1
+}
+
+func (rf *Raft) appendCommand(command interface{}) int {
+	index := len(rf.log) - 1 + 1
+	rf.log = append(rf.log, Entry{command, rf.currentTerm, index})
+	return len(rf.log) - 1
+}
+
+// --------------------- 2C ------------------- //
 
 //
 // save Raft's persistent state to stable storage,
@@ -380,30 +371,6 @@ func (rf *Raft) readPersist(data []byte) {
 }
 
 //
-// the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
-// server isn't the leader, returns false. otherwise start the
-// agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
-// may fail or lose an election. even if the Raft instance has been killed,
-// this function should return gracefully.
-//
-// the first return value is the index that the command will appear at
-// if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
-// the leader.
-//
-func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
-
-	// Your code here (2B).
-
-	return index, term, isLeader
-}
-
-//
 // the tester doesn't halt goroutines created by Raft after each test,
 // but it does call the Kill() method. your code can use killed() to
 // check whether Kill() has been called. the use of atomic avoids the
@@ -422,12 +389,4 @@ func (rf *Raft) Kill() {
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead)
 	return z == 1
-}
-
-func (rf *Raft) othersHasSmallTerm(othersTerm int, term int) bool {
-	if othersTerm < term {
-		rf.print(LOG_ALL, "收到过期 term other:%v curr:%v", othersTerm, term)
-	}
-
-	return othersTerm < term
 }
