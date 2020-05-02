@@ -182,24 +182,45 @@ func TestFailAgree2B(t *testing.T) {
 
 	// disconnect one follower from the network.
 	leader := cfg.checkOneLeader()
-	cfg.disconnect((leader + 1) % servers)
 
+	cfg.disconnect((leader + 1) % servers)
+	DPrintf("已断开 follower %v", ((leader + 1) % servers))
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
+
+	//断开之后继续发给 leader ,
+
+	/*
+
+		要求那个 follower 连接后 , 可以保留断开之后的 log , 并且能够响应新的 log
+		主要和 nextIndex 有关吧
+		断开后造成的问题:
+		leader 发给有问题的 follower 没有响应 , 不知道 RPC 是怎么从处理 , 是卡住还是抛出错误还是给了默认响应
+
+	*/
 	cfg.one(102, servers-1, false)
 	cfg.one(103, servers-1, false)
 	time.Sleep(RaftElectionTimeout)
 	cfg.one(104, servers-1, false)
 	cfg.one(105, servers-1, false)
 
+	DPrintf("发102-105  完成 ")
+
 	// re-connect
 	cfg.connect((leader + 1) % servers)
 
+	DPrintf("重连follower %v", ((leader + 1) % servers))
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
 	// on new commands.
+	DPrintf("发送 106")
 	cfg.one(106, servers, true)
+
+	//设置了一个选举超时时间 , 重连之后会开始一次新的选举
+	//需要实现选举限制,保证之前的 log 被保留下来
+	//需要维护 nextIndex,找到 follower 最后一个和 leader 一致的index,然后开始复制和覆盖
 	time.Sleep(RaftElectionTimeout)
+	DPrintf("发送 107")
 	cfg.one(107, servers, true)
 
 	cfg.end()
