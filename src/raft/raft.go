@@ -91,12 +91,21 @@ type RequestVoteReply struct {
 
 func (rf *Raft) othersHasBiggerTerm(othersTerm int, currentTerm int) bool {
 	if othersTerm > currentTerm {
-		rf.print("收到更大的 term  other%v curr%v", othersTerm, currentTerm)
+		rf.print(LOG_ALL, "收到更大的 term  other%v curr%v", othersTerm, currentTerm)
 	}
 	return othersTerm > currentTerm
 }
 
-func (rf *Raft) print(format string, a ...interface{}) {
+const (
+	LOG_ALL       = 0
+	LOG_VOTE      = 1
+	LOG_HEARTBEAT = 2
+)
+
+func (rf *Raft) print(level int, format string, a ...interface{}) {
+	if level == LOG_VOTE {
+		return
+	}
 	format = "server " + strconv.Itoa(rf.me) + format
 	DPrintf(format, a...)
 }
@@ -108,11 +117,11 @@ func (rf *Raft) becomeFollower(term int) {
 	rf.currentTerm = term
 	rf.voteCount = 0
 	rf.mu.Unlock()
-	rf.print("变成 follower 角色:%v", rf.role)
+	rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
 }
 
 func (rf *Raft) becomeCandidate() {
-	rf.print("变成 candidate")
+	rf.print(LOG_ALL, "变成 candidate")
 	rf.mu.Lock()
 	rf.role = ROLE_CANDIDATE
 	rf.currentTerm++
@@ -138,12 +147,11 @@ func (rf *Raft) becomeCandidate() {
 }
 
 func (rf *Raft) becomeLeader() {
-	rf.print("变成 leader")
+	rf.print(LOG_ALL, "变成 leader")
 	rf.mu.Lock()
 	rf.role = ROLE_LEADER
 	rf.votedFor = -1
 	rf.voteCount = 0
-	rf.sendHeartBeats()
 	rf.mu.Unlock()
 }
 
@@ -163,7 +171,7 @@ func (rf *Raft) sendHeartBeats() {
 
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	//rf.print("收到心跳包")
+
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
 		reply.Term = rf.currentTerm
 		return
@@ -177,13 +185,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
+	rf.print(LOG_HEARTBEAT, "成功处理心跳包")
+
 	reply.Success = true
 	reply.Term = rf.currentTerm
 	return
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.print("收到投票请求 %v", args.CandidateId)
+	rf.print(LOG_VOTE, "收到投票请求 %v", args.CandidateId)
 
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
 		reply.Term = rf.currentTerm
@@ -209,7 +219,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	if rf.role != ROLE_LEADER {
 		return false
 	}
-	//rf.print("开始发心跳包 角色:%v",rf.role)
+	rf.print(LOG_HEARTBEAT, "发送心跳包给%v 当前角色:%v", server, rf.role)
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
@@ -223,7 +233,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // 发送请求
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 
-	rf.print("发送 RV")
+	rf.print(LOG_VOTE, "发送 RV")
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
@@ -236,7 +246,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 			rf.mu.Lock()
 			rf.voteCount++
 			rf.mu.Unlock()
-			rf.print("获得选票数:%v", rf.voteCount)
+			rf.print(LOG_VOTE, "获得选票数:%v", rf.voteCount)
 		}
 	}
 
@@ -282,7 +292,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case <-time.After(time.Duration((rand.Int63())%1500+300) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
 					//rf.becomeCandidate()
 					rf.mu.Lock()
-					rf.print("follower 超时,开始选举")
+					rf.print(LOG_VOTE, "follower 超时,开始选举")
 					rf.role = ROLE_CANDIDATE
 					rf.mu.Unlock()
 				}
@@ -415,5 +425,9 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) othersHasSmallTerm(othersTerm int, term int) bool {
+	if othersTerm < term {
+		rf.print(LOG_ALL, "收到过期 term other:%v curr:%v", othersTerm, term)
+	}
+
 	return othersTerm < term
 }
