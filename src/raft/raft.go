@@ -127,6 +127,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		for {
 			switch rf.role {
 			case ROLE_LEADER:
+				rf.updateLeaderCommitStatus()
 
 			}
 			rf.tryApply()
@@ -393,22 +394,23 @@ func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
 
 func (rf *Raft) updateLeaderCommitStatus() {
 	N := rf.commitIndex + 1
-	//for N <= rf.lastLogIndex() {
-	num := 1
-	for i, _ := range rf.matchIndex {
-		if rf.matchIndex[i] >= N {
-			num++
+	for N <= rf.lastLogIndex() {
+		num := 1
+		for i, _ := range rf.matchIndex {
+			if rf.matchIndex[i] >= N {
+				num++
+			}
 		}
-	}
 
-	if len(rf.log)-1 >= N {
-		rf.print(LOG_LEADER, "更新 leader 的 commitIndex , matchIndex:%v commitIndex%v term:%v currT:%v", rf.matchIndex, rf.commitIndex, rf.log[N].Term, rf.currentTerm)
-	}
+		//if len(rf.log)-1 >= N {
+		//	rf.print(LOG_LEADER, "更新 leader 的 commitIndex , matchIndex:%v commitIndex%v term:%v currT:%v", rf.matchIndex, rf.commitIndex, rf.log[N].Term, rf.currentTerm)
+		//}
 
-	if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
-		rf.commitIndex = N
+		if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
+			rf.commitIndex = N
+		}
+		N++
 	}
-	//}
 }
 
 func (rf *Raft) isMajority(num int) bool {
