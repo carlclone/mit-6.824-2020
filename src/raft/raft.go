@@ -19,6 +19,7 @@ package raft
 
 import (
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -89,13 +90,14 @@ type RequestVoteReply struct {
 }
 
 func (rf *Raft) othersHasBiggerTerm(othersTerm int, currentTerm int) bool {
-	rf.print("received bigger term  %v %v", othersTerm, currentTerm)
+	if othersTerm > currentTerm {
+		rf.print("收到更大的 term  other%v curr%v", othersTerm, currentTerm)
+	}
 	return othersTerm > currentTerm
 }
 
 func (rf *Raft) print(format string, a ...interface{}) {
-	format = "server%v " + format
-	a = append(a, rf.me)
+	format = "server " + strconv.Itoa(rf.me) + format
 	DPrintf(format, a...)
 }
 
@@ -104,10 +106,13 @@ func (rf *Raft) becomeFollower(term int) {
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
 	rf.currentTerm = term
+	rf.voteCount = 0
 	rf.mu.Unlock()
+	rf.print("变成 follower 角色:%v", rf.role)
 }
 
 func (rf *Raft) becomeCandidate() {
+	rf.print("变成 candidate")
 	rf.mu.Lock()
 	rf.role = ROLE_CANDIDATE
 	rf.currentTerm++
@@ -115,7 +120,7 @@ func (rf *Raft) becomeCandidate() {
 	rf.voteCount = 1
 	rf.mu.Unlock()
 
-	DPrintf("%v start election term:%v", rf.me, rf.currentTerm)
+	DPrintf("%v 开始选举 任期:%v", rf.me, rf.currentTerm)
 	args := &RequestVoteArgs{
 		Term:        rf.currentTerm,
 		CandidateId: rf.me,
@@ -133,13 +138,17 @@ func (rf *Raft) becomeCandidate() {
 }
 
 func (rf *Raft) becomeLeader() {
-	DPrintf("%v become leader", rf.me)
+	rf.print("变成 leader")
 	rf.mu.Lock()
 	rf.role = ROLE_LEADER
+	rf.votedFor = -1
+	rf.voteCount = 0
+	rf.sendHeartBeats()
 	rf.mu.Unlock()
 }
 
 func (rf *Raft) sendHeartBeats() {
+
 	args := &AppendEntriesArgs{
 		Term:     rf.currentTerm,
 		LeaderId: rf.me,
@@ -154,23 +163,32 @@ func (rf *Raft) sendHeartBeats() {
 
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-
+	//rf.print("收到心跳包")
+	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
+		reply.Term = rf.currentTerm
+		return
+	}
 	rf.receiveAppendEntries <- true
 
 	reply.Success = false
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
 		rf.becomeFollower(args.Term)
+		reply.Term = rf.currentTerm
 		return
 	}
 
 	reply.Success = true
-
-	rf.print("heartbeat handle finish  %v %v", args, reply)
+	reply.Term = rf.currentTerm
 	return
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.print("收到投票请求 %v", args.CandidateId)
 
+	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
+		reply.Term = rf.currentTerm
+		return
+	}
 	rf.receiveVoteReqs <- true
 
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
@@ -182,17 +200,17 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 	}
 
-	rf.print("vote request from %v", args.CandidateId)
+	reply.Term = rf.currentTerm
+
 }
 
 //发送请求
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	rf.print("send AppendEntries")
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-
-	if !reply.Success {
-		return ok
+	if rf.role != ROLE_LEADER {
+		return false
 	}
+	//rf.print("开始发心跳包 角色:%v",rf.role)
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
 		rf.becomeFollower(reply.Term)
@@ -205,11 +223,12 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // 发送请求
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 
-	rf.print("sendRequestVote")
+	rf.print("发送 RV")
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
 		rf.becomeFollower(reply.Term)
+		return ok
 	}
 
 	if ok {
@@ -217,7 +236,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 			rf.mu.Lock()
 			rf.voteCount++
 			rf.mu.Unlock()
-			rf.print("voteCount:%v", rf.voteCount)
+			rf.print("获得选票数:%v", rf.voteCount)
 		}
 	}
 
@@ -261,15 +280,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case <-rf.receiveAppendEntries:
 				case <-rf.receiveVoteReqs:
 				case <-time.After(time.Duration((rand.Int63())%1500+300) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
-					DPrintf("%v follower timeout ,start election ", rf.me)
-					rf.becomeCandidate()
+					//rf.becomeCandidate()
+					rf.mu.Lock()
+					rf.print("follower 超时,开始选举")
+					rf.role = ROLE_CANDIDATE
+					rf.mu.Unlock()
 				}
 
 			case ROLE_CANDIDATE:
+				rf.becomeCandidate()
 				select {
 				case <-rf.receiveAppendEntries:
-				case <-time.After(time.Duration((rand.Int63())%1500+300) * time.Millisecond):
-					rf.becomeCandidate()
+				case <-time.After(time.Duration((rand.Int63())%300+1000) * time.Millisecond):
+
 				}
 			case ROLE_LEADER:
 				time.Sleep(20 * time.Millisecond)
@@ -389,4 +412,8 @@ func (rf *Raft) Kill() {
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead)
 	return z == 1
+}
+
+func (rf *Raft) othersHasSmallTerm(othersTerm int, term int) bool {
+	return othersTerm < term
 }

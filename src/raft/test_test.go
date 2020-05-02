@@ -51,7 +51,7 @@ func TestInitialElection2A(t *testing.T) {
 }
 
 func TestReElection2A(t *testing.T) {
-	servers := 10
+	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
 
@@ -63,6 +63,7 @@ func TestReElection2A(t *testing.T) {
 
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
+	DPrintf("已断开%v", leader1)
 	cfg.checkOneLeader()
 
 	DPrintf("断开leader1测试通过")
@@ -70,37 +71,44 @@ func TestReElection2A(t *testing.T) {
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader.
 	cfg.connect(leader1)
+	DPrintf("已重连%v", leader1)
 	leader2 := cfg.checkOneLeader()
 
 	//发现有 term 比自己大的 AppenEntries 请求 , 更新,变成 follower
 	DPrintf("leader1重新加入测试通过")
-
-	// if there's no quorum, no leader should
-	// be elected.
+	//
+	//// if there's no quorum, no leader should
+	//// be elected.
 	cfg.disconnect(leader2)
 	cfg.disconnect((leader2 + 1) % servers)
+	DPrintf("已断开%v %v", leader2, (leader2+1)%servers)
 	time.Sleep(2 * RaftElectionTimeout)
 	cfg.checkNoLeader()
-
-	//投票阶段的 bug ,
-	// 1 需要并发发送请求 , 否则会卡在一个断开的 peer 上
-	// 2 需要丢弃过期任期的投票
+	DPrintf("不应该存在 leader 通过")
+	//
+	////投票阶段的 bug ,
+	//// 1 需要并发发送请求 , 否则会卡在一个断开的 peer 上
+	//// 2 需要丢弃过期任期的投票
 	DPrintf("peers数不足,无法形成leader测试通过")
-
-	// if a quorum arises, it should elect a leader.
+	//
+	//// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
+	DPrintf("重连%v", (leader2+1)%servers)
 	cfg.checkOneLeader()
-
-	//也是投票阶段的 bug
+	//
+	////也是投票阶段的 bug
 	DPrintf("重新加入,peer足够,生成一个leader通过")
-
-	// re-join of last node shouldn't prevent leader from existing.
+	//
+	//// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
+	DPrintf("重连%v", leader2)
+	//DPrintf("server:%v 已重连 leader2",leader2)
 	cfg.checkOneLeader()
-
-	//心跳阶段的 bug
+	//
+	////心跳阶段的 bug
 	DPrintf("已有leader的情况下,再重连一个本来是leader的peer,不影响新leader 测试通过")
-
+	//
+	time.Sleep(10 * time.Second)
 	cfg.end()
 }
 
