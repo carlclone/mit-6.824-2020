@@ -230,6 +230,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 }
 
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	index := -1
 	term := -1
 	isLeader := rf.isLeader()
