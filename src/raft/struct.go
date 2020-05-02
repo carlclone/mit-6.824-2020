@@ -31,6 +31,7 @@ type Raft struct {
 	voteCount            int
 	receiveAppendEntries chan bool
 	receiveVoteReqs      chan bool
+	applyCh              chan ApplyMsg
 }
 
 func (rf *Raft) serverNextEntriesToReplica(server int) []Entry {
@@ -80,6 +81,53 @@ func (rf *Raft) appendLeadersLog(entries []Entry) {
 		}
 	}
 	rf.print(LOG_REPLICA_1, "append 完毕 %v", rf.log)
+}
+
+func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
+	if rf.role != ROLE_FOLLOWER {
+		return
+	}
+	if leaderCommitIndex > rf.commitIndex {
+		lastLogIndex := rf.lastLogIndex()
+		if rf.commitIndex > lastLogIndex {
+			rf.commitIndex = lastLogIndex
+		} else {
+			rf.commitIndex = leaderCommitIndex
+		}
+	}
+	rf.print(LOG_REPLICA_1, "更新 follower commitindex 完毕 %v", rf.commitIndex)
+
+}
+
+func (rf *Raft) updateLeaderCommitStatus() {
+	N := rf.commitIndex + 1
+	num := 1
+	for i, _ := range rf.matchIndex {
+		if rf.matchIndex[i] >= N {
+			num++
+		}
+	}
+	if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
+		rf.commitIndex = N
+	}
+}
+
+func (rf *Raft) isMajority(num int) bool {
+	var res bool
+	if num > rf.peerCount()/2 {
+		res = true
+	} else {
+		res = false
+	}
+	return res
+}
+
+func (rf *Raft) tryApply() {
+	if rf.commitIndex > rf.lastApplied {
+		rf.lastApplied++
+		log := rf.log[rf.lastApplied]
+		rf.applyCh <- ApplyMsg{true, log.Command, log.Index}
+	}
 }
 
 //请求结构

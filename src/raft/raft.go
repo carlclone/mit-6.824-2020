@@ -57,6 +57,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Success = true
 	}
 
+	rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
+
 	reply.Term = rf.currentTerm
 	return
 }
@@ -89,6 +91,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		return false
 	}
 
+	args.LeaderCommitIndex = rf.commitIndex
 	args.Entries = rf.serverNextEntriesToReplica(server)
 
 	if len(args.Entries) == 0 {
@@ -168,6 +171,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	rf.log = append(rf.log, Entry{})
+	rf.applyCh = applyCh
 
 	DPrintf("create peer")
 
@@ -205,6 +209,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			case ROLE_LEADER:
 				rf.sendHeartBeats()
 			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	go func() {
+		for {
+			switch rf.role {
+			case ROLE_LEADER:
+				rf.updateLeaderCommitStatus()
+
+			}
+			rf.tryApply()
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
