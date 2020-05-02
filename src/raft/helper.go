@@ -7,10 +7,12 @@ const (
 	LOG_VOTE      = 1
 	LOG_HEARTBEAT = 2
 	LOG_REPLICA_1 = 3
+
+	LOG_LEADER = 10
 )
 
 func (rf *Raft) print(level int, format string, a ...interface{}) {
-	if level != LOG_ALL && level != 3 {
+	if level != LOG_ALL && level != 3 && level != LOG_LEADER {
 		return
 	}
 

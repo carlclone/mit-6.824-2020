@@ -214,6 +214,7 @@ func TestFailAgree2B(t *testing.T) {
 	// previous agreements, and be able to agree
 	// on new commands.
 	DPrintf("发送 106")
+	//TODO;这里不知道为啥一直在重试
 	cfg.one(106, servers, true)
 
 	//设置了一个选举超时时间 , 重连之后会开始一次新的选举
