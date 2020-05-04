@@ -456,16 +456,16 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 		if index != -1 {
 			// somebody claimed to be the leader and to have
 			// submitted our command; wait a while for agreement.
-			DPrintf("测试用例获得 index")
+			//DPrintf("测试用例获得 index")
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
-				DPrintf("commited 的数目 nd%v", nd)
+				//DPrintf("commited 的数目 nd%v", nd)
 				if nd > 0 && nd >= expectedServers {
 					// committed
 					//都已经复制了并且命令也一致则通过
 					if cmd1 == cmd {
-						DPrintf("cmd 一致")
+						//DPrintf("cmd 一致")
 						// and it was the command we submitted.
 						return index
 					}

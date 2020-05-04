@@ -108,7 +108,7 @@ func TestReElection2A(t *testing.T) {
 	////心跳阶段的 bug
 	DPrintf("已有leader的情况下,再重连一个本来是leader的peer,不影响新leader 测试通过")
 	//
-	time.Sleep(10 * time.Second)
+	time.Sleep(2 * time.Second)
 	cfg.end()
 }
 
@@ -214,7 +214,6 @@ func TestFailAgree2B(t *testing.T) {
 	// previous agreements, and be able to agree
 	// on new commands.
 	DPrintf("发送 106")
-	//TODO;这里不知道为啥一直在重试
 	cfg.one(106, servers, true)
 
 	//设置了一个选举超时时间 , 重连之后会开始一次新的选举
@@ -234,14 +233,18 @@ func TestFailNoAgree2B(t *testing.T) {
 
 	cfg.begin("Test (2B): no agreement if too many followers disconnect")
 
+	DPrintf("添加元素 10")
 	cfg.one(10, servers, false)
 
 	// 3 of 5 followers disconnect
 	leader := cfg.checkOneLeader()
+
+	DPrintf("断开 3 个 follower")
 	cfg.disconnect((leader + 1) % servers)
 	cfg.disconnect((leader + 2) % servers)
 	cfg.disconnect((leader + 3) % servers)
 
+	DPrintf("添加元素 20")
 	index, _, ok := cfg.rafts[leader].Start(20)
 	if ok != true {
 		t.Fatalf("leader rejected Start()")
@@ -258,6 +261,7 @@ func TestFailNoAgree2B(t *testing.T) {
 	}
 
 	// repair
+	DPrintf("重连 3 个 follower")
 	cfg.connect((leader + 1) % servers)
 	cfg.connect((leader + 2) % servers)
 	cfg.connect((leader + 3) % servers)
@@ -265,6 +269,7 @@ func TestFailNoAgree2B(t *testing.T) {
 	// the disconnected majority may have chosen a leader from
 	// among their own ranks, forgetting index 2.
 	leader2 := cfg.checkOneLeader()
+	DPrintf("添加元素 30")
 	index2, _, ok2 := cfg.rafts[leader2].Start(30)
 	if ok2 == false {
 		t.Fatalf("leader2 rejected Start()")
@@ -379,6 +384,7 @@ loop:
 	cfg.end()
 }
 
+// leader 分区情况,有一个会被选为 follower 并且被覆盖?
 func TestRejoin2B(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)

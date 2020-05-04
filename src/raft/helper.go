@@ -12,7 +12,7 @@ const (
 )
 
 func (rf *Raft) print(level int, format string, a ...interface{}) {
-	if level != LOG_ALL && level != 3 && level != LOG_LEADER {
+	if level != LOG_ALL && level != LOG_VOTE {
 		return
 	}
 

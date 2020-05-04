@@ -92,7 +92,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				select {
 				case <-rf.receiveAppendEntries:
 				case <-rf.receiveVoteReqs:
-				case <-time.After(time.Duration((rand.Int63())%300+300) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
+				case <-time.After(time.Duration((rand.Int63())%300+400) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
 					//rf.becomeCandidate()
 					rf.mu.Lock()
 					rf.print(LOG_VOTE, "follower 超时,开始选举")
@@ -104,7 +104,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.becomeCandidate()
 				select {
 				case <-rf.receiveAppendEntries:
-				case <-time.After(time.Duration((rand.Int63())%300+1000) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%300+400) * time.Millisecond):
 
 				}
 			case ROLE_LEADER:
@@ -187,7 +187,12 @@ func (rf *Raft) becomeFollower(term int) {
 }
 
 func (rf *Raft) becomeCandidate() {
-	rf.print(LOG_ALL, "变成 candidate")
+	if rf.role == ROLE_CANDIDATE {
+		rf.print(LOG_ALL, "candidate新一轮选举")
+	} else {
+		rf.print(LOG_ALL, "变成 candidate")
+	}
+
 	rf.mu.Lock()
 	rf.role = ROLE_CANDIDATE
 	rf.currentTerm++
@@ -388,7 +393,7 @@ func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
 			rf.commitIndex = leaderCommitIndex
 		}
 	}
-	rf.print(LOG_REPLICA_1, "更新 follower commitindex 完毕 %v", rf.commitIndex)
+	//rf.print(LOG_REPLICA_1, "更新 follower commitindex 完毕 %v", rf.commitIndex)
 
 }
 
