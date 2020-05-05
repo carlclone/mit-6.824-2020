@@ -119,7 +119,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			case ROLE_LEADER:
 				rf.sendHeartBeats()
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 
