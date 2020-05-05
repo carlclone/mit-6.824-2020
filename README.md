@@ -31,14 +31,14 @@ TestBasicAgree2B √
 TestRPCBytes2B √
 保证一次复制每个 peer只发送一次 RPC
 
-TestFailAgree2B
+TestFailAgree2B √
 
-TestFailNoAgree2B
+TestFailNoAgree2B √
 
-TestConcurrentStarts2B
+TestConcurrentStarts2B √
 
-TestRejoin2B
+TestRejoin2B √
 
-TestBackup2B
+TestBackup2B √
 
-TestCount2B
+TestCount2B 优化,减少 RPC 次数,先跳过..
