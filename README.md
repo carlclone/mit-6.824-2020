@@ -41,7 +41,7 @@ TestRejoin2B √
 
 TestBackup2B √
 
-TestCount2B 优化,减少 RPC 次数,先跳过..
+TestCount2B 优化,减少一次选举需要的 RPC 次数
 
 
 
