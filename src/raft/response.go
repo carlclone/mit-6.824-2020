@@ -28,15 +28,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			reply.MatchIndex = rf.lastLogIndex()
 			reply.NeedMaintainIndex = true
 			rf.print(LOG_REPLICA_1, "成功处理心跳包")
+
 		}
+		rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
 	} else {
-		reply.NextIndex = rf.lastLogIndex() + 1
-		reply.MatchIndex = rf.lastLogIndex()
+		reply.NextIndex = args.PrevLogIndex
+		reply.MatchIndex = -1
 		reply.Success = true
 		reply.NeedMaintainIndex = true
 	}
-
-	rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
 
 	reply.Term = rf.currentTerm
 	return

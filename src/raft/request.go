@@ -31,8 +31,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	if reply.NeedMaintainIndex {
 		rf.print(LOG_REPLICA_1, "维护 nextIndex 和 MatchIndex server:%v reply%v", server, reply)
 		rf.nextIndex[server] = reply.NextIndex
-		rf.matchIndex[server] = reply.MatchIndex
-
+		if reply.MatchIndex != -1 {
+			rf.matchIndex[server] = reply.MatchIndex
+		}
 	}
 
 	return ok

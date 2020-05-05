@@ -391,7 +391,7 @@ func TestRejoin2B(t *testing.T) {
 	defer cfg.cleanup()
 
 	cfg.begin("Test (2B): rejoin of partitioned leader")
-
+	//0  2  1
 	cfg.one(101, servers, true)
 
 	// leader network failure

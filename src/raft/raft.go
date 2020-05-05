@@ -346,14 +346,18 @@ func (rf *Raft) serverNextEntriesToReplica(server int) []Entry {
 }
 
 func (rf *Raft) comparePrevLog(prevLogTerm int, prevLogIndex int) bool {
-	lastLog := rf.lastLog()
+	if prevLogIndex > len(rf.log)-1 {
+		return false
+	}
+
+	prevlog := rf.log[prevLogIndex]
 	var res bool
-	if lastLog.Index == prevLogIndex && lastLog.Term == prevLogTerm {
+	if prevlog.Index == prevLogIndex && prevlog.Term == prevLogTerm {
 		res = true
 	} else {
 		res = false
 	}
-	rf.print(LOG_REPLICA_1, "比对结果 %v pT:%v pI:%v,ct:%v,ci:%v", res, prevLogTerm, prevLogIndex, lastLog.Term, lastLog.Index)
+	//rf.print(LOG_REPLICA_1, "比对结果 %v pT:%v pI:%v,ct:%v,ci:%v", res, prevLogTerm, prevLogIndex, prevlog.Term, prevlog.Index)
 	return res
 }
 
@@ -365,6 +369,8 @@ func (rf *Raft) appendLeadersLog(entries []Entry) {
 	rf.print(LOG_REPLICA_1, "开始 append leader 给的 log,  entry:%v", entries)
 	startIndex := entries[0].Index
 	entriesEndIndex := entries[len(entries)-1].Index
+
+	rf.log = rf.log[:startIndex]
 	logEndIndex := len(rf.log) - 1
 	for i := startIndex; i <= entriesEndIndex; i++ {
 		entry := entries[i-startIndex]
