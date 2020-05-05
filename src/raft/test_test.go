@@ -384,7 +384,6 @@ loop:
 	cfg.end()
 }
 
-// leader 分区情况,有一个会被选为 follower 并且被覆盖?
 func TestRejoin2B(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
