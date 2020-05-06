@@ -58,8 +58,9 @@ type Raft struct {
 	//volatile / only leader
 
 	//other
-	role                 int
-	voteCount            int
+	role      int
+	voteCount int
+
 	receiveAppendEntries chan bool
 	receiveVoteReqs      chan bool
 	applyCh              chan ApplyMsg
@@ -379,6 +380,8 @@ func (rf *Raft) lastLog() Entry {
 }
 
 func (rf *Raft) appendLeadersLog(entries []Entry) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.print(LOG_REPLICA_1, "开始 append leader 给的 log,  entry:%v", entries)
 	startIndex := entries[0].Index
 	entriesEndIndex := entries[len(entries)-1].Index
