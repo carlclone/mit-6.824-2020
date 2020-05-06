@@ -27,6 +27,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		rf.becomeFollower(reply.Term)
 		return ok
 	}
+	if rf.othersHasSmallTerm(reply.Term, rf.currentTerm) {
+		return ok
+	}
 
 	if reply.NeedMaintainIndex {
 		rf.print(LOG_REPLICA_1, "维护 nextIndex 和 MatchIndex server:%v reply%v", server, reply)
@@ -65,6 +68,10 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
 		rf.becomeFollower(reply.Term)
+		return ok
+	}
+
+	if rf.othersHasSmallTerm(reply.Term, rf.currentTerm) {
 		return ok
 	}
 
