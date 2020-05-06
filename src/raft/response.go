@@ -26,8 +26,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		if len(args.Entries) != 0 {
 			rf.appendLeadersLog(args.Entries)
 			reply.Success = true
+			reply.MatchIndex = args.PrevLogIndex + len(args.Entries)
 			reply.NextIndex = rf.lastLogIndex() + 1
-			reply.MatchIndex = rf.lastLogIndex()
 			reply.NeedMaintainIndex = true
 			rf.print(LOG_REPLICA_1, "成功处理心跳包")
 
