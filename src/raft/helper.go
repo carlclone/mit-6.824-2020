@@ -12,6 +12,7 @@ const (
 )
 
 func (rf *Raft) print(level int, format string, a ...interface{}) {
+	return
 	if level != LOG_ALL && level != LOG_REPLICA_1 {
 		return
 	}

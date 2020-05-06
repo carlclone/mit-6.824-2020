@@ -18,6 +18,8 @@ package raft
 //
 
 import (
+	"bytes"
+	"labgob"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -75,12 +77,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.votedFor = -1
 	rf.role = ROLE_FOLLOWER
+	rf.log = append(rf.log, Entry{})
 	// Your initialization code here (2A, 2B, 2C).
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	rf.log = append(rf.log, Entry{})
 	rf.applyCh = applyCh
 
 	DPrintf("create peer")
@@ -181,6 +183,7 @@ func (rf *Raft) becomeFollower(term int) {
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
 	rf.currentTerm = term
+	rf.persist()
 	rf.voteCount = 0
 	rf.mu.Unlock()
 	rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
@@ -197,10 +200,11 @@ func (rf *Raft) becomeCandidate() {
 	rf.role = ROLE_CANDIDATE
 	rf.currentTerm++
 	rf.votedFor = rf.me
+	rf.persist()
 	rf.voteCount = 1
 	rf.mu.Unlock()
 
-	DPrintf("%v 开始选举 任期:%v", rf.me, rf.currentTerm)
+	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
 
 	for i, _ := range rf.peers {
 		if i != rf.me {
@@ -225,6 +229,7 @@ func (rf *Raft) becomeLeader() {
 	rf.mu.Lock()
 	rf.role = ROLE_LEADER
 	rf.votedFor = -1
+	rf.persist()
 	rf.voteCount = 0
 
 	//复制阶段初始化
@@ -266,6 +271,7 @@ func (rf *Raft) lastLogIndex() int {
 func (rf *Raft) appendCommand(command interface{}) int {
 	index := len(rf.log) - 1 + 1
 	rf.log = append(rf.log, Entry{command, rf.currentTerm, index})
+	rf.persist()
 	return len(rf.log) - 1
 }
 
@@ -277,14 +283,13 @@ func (rf *Raft) appendCommand(command interface{}) int {
 // see paper's Figure 2 for a description of what should be persistent.
 //
 func (rf *Raft) persist() {
-	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -294,19 +299,21 @@ func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
-	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var votedFor int
+	var currentTerm int
+	var log []Entry
+	if d.Decode(&votedFor) != nil ||
+		d.Decode(&currentTerm) != nil ||
+		d.Decode(&log) != nil {
+		//error...
+		rf.print(LOG_ALL, "decode出错,或为空")
+	} else {
+		rf.votedFor = votedFor
+		rf.currentTerm = currentTerm
+		rf.log = log
+	}
 }
 
 //
@@ -384,6 +391,7 @@ func (rf *Raft) appendLeadersLog(entries []Entry) {
 			rf.log = append(rf.log, entry)
 		}
 	}
+	rf.persist()
 	rf.print(LOG_REPLICA_1, "append 完毕 %v", rf.log)
 }
 
