@@ -474,3 +474,12 @@ func (rf *Raft) isNewestLog(lastLogIndex int, lastLogTerm int) bool {
 	}
 	return false
 }
+
+func (rf *Raft) findFirstIndexOfTerm(prevLogTerm int) int {
+	for _, entry := range rf.log {
+		if entry.Term == prevLogTerm {
+			return entry.Index
+		}
+	}
+	return -1
+}

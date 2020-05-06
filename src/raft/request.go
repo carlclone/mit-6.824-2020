@@ -30,7 +30,25 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 	if reply.NeedMaintainIndex {
 		rf.print(LOG_REPLICA_1, "维护 nextIndex 和 MatchIndex server:%v reply%v", server, reply)
-		rf.nextIndex[server] = reply.NextIndex
+
+		//2C优化
+		// leader要做的事 :   从后往前找到term=conflictTerm的log , 如果找到了 , 要设置nextIndex = 该log的index
+		//如果没找到 , nextIndex=conflictIndex
+		if reply.ConflictTerm != -1 {
+			logLen := len(rf.log)
+
+			rf.nextIndex[server] = reply.ConflictIndex
+
+			for i := logLen - 1; i >= 0; i-- {
+				if rf.log[i].Term == reply.ConflictTerm {
+					rf.nextIndex[server] = rf.log[i].Index
+				}
+			}
+
+		} else {
+			rf.nextIndex[server] = reply.NextIndex
+		}
+
 		if reply.MatchIndex != -1 {
 			rf.matchIndex[server] = reply.MatchIndex
 		}

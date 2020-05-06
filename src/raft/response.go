@@ -5,6 +5,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Success = false
 	reply.NeedMaintainIndex = false
 	reply.From = rf.me
+	reply.ConflictIndex = -1
+	reply.ConflictTerm = -1
 
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
 		reply.Term = rf.currentTerm
@@ -32,10 +34,17 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		}
 		rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
 	} else {
+		//2C的优化实现
+		if args.PrevLogIndex <= len(rf.log)-1 {
+			prevlog := rf.log[args.PrevLogIndex]
+			reply.ConflictTerm = prevlog.Term
+			reply.ConflictIndex = rf.findFirstIndexOfTerm(prevlog.Term)
+		}
 		reply.NextIndex = args.PrevLogIndex
 		reply.MatchIndex = -1
 		reply.Success = true
 		reply.NeedMaintainIndex = true
+
 	}
 
 	reply.Term = rf.currentTerm

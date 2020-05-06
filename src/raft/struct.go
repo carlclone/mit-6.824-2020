@@ -18,6 +18,9 @@ type AppendEntriesReply struct {
 	AppendSuccess     bool
 	NeedMaintainIndex bool
 	From              int
+
+	ConflictTerm  int
+	ConflictIndex int
 }
 
 type RequestVoteArgs struct {
