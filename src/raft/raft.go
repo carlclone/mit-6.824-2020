@@ -30,6 +30,12 @@ import "labrpc"
 // import "bytes"
 // import "../labgob"
 
+const (
+	ROLE_FOLLOWER  = 1
+	ROLE_CANDIDATE = 2
+	ROLE_LEADER    = 3
+)
+
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
