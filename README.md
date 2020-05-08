@@ -81,3 +81,9 @@ Raft forces agreement by having followers adopt new leader's log
   S2 deletes its entry 12 (AppendEntries step 3)
   similar story for S1, but S3 has to back up one farther
   ```
+
+
+### 资料
+
+[课表](https://pdos.csail.mit.edu/6.824/schedule.html)
+  S2 deletes its entry 12 (AppendEntries step 3)
