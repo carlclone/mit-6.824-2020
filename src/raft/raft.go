@@ -37,7 +37,9 @@ const (
 )
 
 type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
+	mu        sync.Mutex // Lock to protect shared access to this peer's state
+	mu2       sync.Mutex
+	mu3       sync.Mutex
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
@@ -101,7 +103,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				select {
 				case <-rf.receiveAppendEntries:
 				case <-rf.receiveVoteReqs:
-				case <-time.After(time.Duration((rand.Int63())%300+600) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
+				case <-time.After(time.Duration((rand.Int63())%400+200) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
 					//rf.becomeCandidate()
 					rf.mu.Lock()
 					rf.print(LOG_VOTE, "follower 超时,开始选举")
@@ -113,7 +115,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.becomeCandidate()
 				select {
 				case <-rf.receiveAppendEntries:
-				case <-time.After(time.Duration((rand.Int63())%300+600) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%300+200) * time.Millisecond):
 
 				}
 			case ROLE_LEADER:
@@ -128,18 +130,20 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			case ROLE_LEADER:
 				rf.sendHeartBeats()
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 		}
 	}()
 
 	go func() {
 		for {
+			rf.mu2.Lock()
 			switch rf.role {
 			case ROLE_LEADER:
 				rf.updateLeaderCommitStatus()
 
 			}
 			rf.tryApply()
+			rf.mu2.Unlock()
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
@@ -186,13 +190,11 @@ func (rf *Raft) isLeader() bool {
 }
 
 func (rf *Raft) becomeFollower(term int) {
-	rf.mu.Lock()
 	rf.role = ROLE_FOLLOWER
 	rf.votedFor = -1
 	rf.currentTerm = term
 	rf.persist()
 	rf.voteCount = 0
-	rf.mu.Unlock()
 	rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
 }
 
@@ -203,13 +205,11 @@ func (rf *Raft) becomeCandidate() {
 		rf.print(LOG_ALL, "变成 candidate")
 	}
 
-	rf.mu.Lock()
 	rf.role = ROLE_CANDIDATE
 	rf.currentTerm++
 	rf.votedFor = rf.me
-	rf.persist()
+	//rf.persist()
 	rf.voteCount = 1
-	rf.mu.Unlock()
 
 	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
 
@@ -233,7 +233,6 @@ func (rf *Raft) becomeCandidate() {
 
 func (rf *Raft) becomeLeader() {
 	rf.print(LOG_ALL, "变成 leader")
-	rf.mu.Lock()
 	rf.role = ROLE_LEADER
 	rf.votedFor = -1
 	rf.persist()
@@ -246,7 +245,6 @@ func (rf *Raft) becomeLeader() {
 		rf.nextIndex[i] = rf.lastLogIndex() + 1
 	}
 
-	rf.mu.Unlock()
 }
 
 func (rf *Raft) peerCount() int {
@@ -380,26 +378,25 @@ func (rf *Raft) lastLog() Entry {
 }
 
 func (rf *Raft) appendLeadersLog(entries []Entry) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	rf.print(LOG_REPLICA_1, "开始 append leader 给的 log,  entry:%v", entries)
 	startIndex := entries[0].Index
-	entriesEndIndex := entries[len(entries)-1].Index
+	//entriesEndIndex := entries[len(entries)-1].Index
 
 	rf.log = rf.log[:startIndex]
-	logEndIndex := len(rf.log) - 1
-	for i := startIndex; i <= entriesEndIndex; i++ {
-		entry := entries[i-startIndex]
-		if i <= logEndIndex {
-			if rf.log[i].Term == entry.Term {
-				continue
-			} else {
-				rf.log[i] = entry
-			}
-		} else {
-			rf.log = append(rf.log, entry)
-		}
-	}
+	//logEndIndex := len(rf.log) - 1
+	rf.log = append(rf.log, entries...)
+	//for i := startIndex; i <= entriesEndIndex; i++ {
+	//	entry := entries[i-startIndex]
+	//	if i <= logEndIndex {
+	//		if rf.log[i].Term == entry.Term {
+	//			continue
+	//		} else {
+	//			rf.log[i] = entry
+	//		}
+	//	} else {
+	//		rf.log = append(rf.log, entry)
+	//	}
+	//}
 	rf.persist()
 	rf.print(LOG_REPLICA_1, "append 完毕 %v", rf.log)
 }
@@ -416,7 +413,7 @@ func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
 			rf.commitIndex = leaderCommitIndex
 		}
 	}
-	//rf.print(LOG_REPLICA_1, "更新 follower commitindex 完毕 %v", rf.commitIndex)
+	rf.print(LOG_PERSIST, "更新 follower commitindex 完毕 %v", rf.commitIndex)
 
 }
 
@@ -435,6 +432,7 @@ func (rf *Raft) updateLeaderCommitStatus() {
 		//}
 
 		if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
+			rf.print(LOG_PERSIST, "达到大多数 %v", rf.log)
 			rf.commitIndex = N
 		}
 		N++
@@ -454,7 +452,7 @@ func (rf *Raft) isMajority(num int) bool {
 func (rf *Raft) tryApply() {
 
 	if rf.commitIndex > rf.lastApplied {
-		rf.print(LOG_REPLICA_1, "尝试 apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, rf.log)
+		rf.print(LOG_PERSIST, "尝试 apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, rf.log)
 		rf.lastApplied++
 		log := rf.log[rf.lastApplied]
 		rf.applyCh <- ApplyMsg{true, log.Command, log.Index}

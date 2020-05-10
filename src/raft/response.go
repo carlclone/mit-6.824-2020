@@ -2,6 +2,8 @@ package raft
 
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	reply.Success = false
 	reply.NeedMaintainIndex = false
 	reply.From = rf.me
@@ -10,6 +12,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
 		reply.Term = rf.currentTerm
+		reply.NeedMaintainIndex = true
+		reply.NextIndex = rf.lastLogIndex() + 1
 		return
 	}
 	rf.receiveAppendEntries <- true
@@ -17,7 +21,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
 		rf.becomeFollower(args.Term)
 		reply.Term = rf.currentTerm
-		return
+		//return
 	}
 
 	success := rf.comparePrevLog(args.PrevLogTerm, args.PrevLogIndex)
@@ -52,6 +56,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.print(LOG_VOTE, "收到投票请求 %v", args.CandidateId)
 
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {

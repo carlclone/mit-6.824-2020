@@ -5,6 +5,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	if rf.role != ROLE_LEADER {
 		return false
 	}
+
 	rf.print(LOG_HEARTBEAT, "发送心跳包前给%v 当前角色:%v", server, rf.role)
 	args.LeaderCommitIndex = rf.commitIndex
 	args.Entries = rf.serverNextEntriesToReplica(server)
@@ -20,7 +21,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	}
 
 	rf.print(LOG_HEARTBEAT, "发送心跳包给%v 当前角色:%v", server, rf.role)
-
+	if args.Term != rf.currentTerm {
+		return false
+	}
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
@@ -77,9 +80,9 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 
 	if ok {
 		if reply.VoteGranted {
-			rf.mu.Lock()
+			rf.mu3.Lock()
 			rf.voteCount++
-			rf.mu.Unlock()
+			rf.mu3.Unlock()
 			rf.print(LOG_VOTE, "获得选票数:%v", rf.voteCount)
 		}
 	}
