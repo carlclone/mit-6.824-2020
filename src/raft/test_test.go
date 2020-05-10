@@ -826,15 +826,22 @@ func TestFigure8Unreliable2C(t *testing.T) {
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
 
+	//figure 8 不可靠情况 5 个 server
 	cfg.begin("Test (2C): Figure 8 (unreliable)")
 
+	//先提交一个
 	cfg.one(rand.Int()%10000, 1, true)
 
+	//nup 是什么的缩写
 	nup := servers
+	//遍历 1000 次
 	for iters := 0; iters < 1000; iters++ {
+		// 等于 200 则 , 这里做了什么
 		if iters == 200 {
 			cfg.setlongreordering(true)
 		}
+
+		//Start 一个值,找出 leader
 		leader := -1
 		for i := 0; i < servers; i++ {
 			_, _, ok := cfg.rafts[i].Start(rand.Int() % 10000)
@@ -843,19 +850,23 @@ func TestFigure8Unreliable2C(t *testing.T) {
 			}
 		}
 
+		//随机sleep , 这个睡了多久
 		if (rand.Int() % 1000) < 100 {
 			ms := rand.Int63() % (int64(RaftElectionTimeout/time.Millisecond) / 2)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		} else {
+			//这个睡眠时间比较短
 			ms := (rand.Int63() % 13)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		}
 
+		//随机断开 leader
 		if leader != -1 && (rand.Int()%1000) < int(RaftElectionTimeout/time.Millisecond)/2 {
 			cfg.disconnect(leader)
 			nup -= 1
 		}
 
+		//如果断开的 leader 个数<3 了,随机重新连回一个 , 可能不连
 		if nup < 3 {
 			s := rand.Int() % servers
 			if cfg.connected[s] == false {
@@ -865,12 +876,14 @@ func TestFigure8Unreliable2C(t *testing.T) {
 		}
 	}
 
+	//全部连回
 	for i := 0; i < servers; i++ {
 		if cfg.connected[i] == false {
 			cfg.connect(i)
 		}
 	}
 
+	//
 	cfg.one(rand.Int()%10000, servers, true)
 
 	cfg.end()
