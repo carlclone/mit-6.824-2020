@@ -9,7 +9,7 @@ All labs and assignment for the course
   - [x] Task timeout redistribute test 
   - [x] Crash Test 
   
-- [x] Lab2 Raft
+- [ ] Lab2 Raft
   - [x] Part 2A 
     - [x] Initial Election 
     - [x] ReElection with network failure 
@@ -25,7 +25,13 @@ All labs and assignment for the course
     - [x] TestBackup2B 
     - [x] TestCount2B 优化,减少一次选举需要的 RPC 次数
 
-
+  - [ ] Part 2C
+    - [x] some 2c persist simple Test
+    - [ ] TestFigure82C
+    - [ ] TestUnreliableAgree2C
+    - [ ] TestFigure8Unreliable2C *****
+    - [ ] TestUnreliableChurn2C *****
+    - [ ] TestReliableChurn2C
 
 
 
