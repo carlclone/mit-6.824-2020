@@ -1,47 +1,29 @@
 
 All labs and assignment for the course
 
-## Lab1 MapReduce
+- [x] Lab1 MapReduce
+  - [x] WordCount test 
+  - [x] Indexer test 
+  - [x] Map parallelism test 
+  - [x] Reduce parallelism test 
+  - [x] Task timeout redistribute test 
+  - [x] Crash Test 
+  
+- [x] Lab2 Raft
+  - [x] Part 2A 
+    - [x] Initial Election 
+    - [x] ReElection with network failure 
 
-WordCount test √
 
-Indexer test √
-
-Map parallelism test √
-
-Reduce parallelism test √
-
-Task timeout redistribute test √
-
-Crash Test √
-
-# Lab2 Raft
-
-## Part 2A √
-
-Initial Election √
-
-ReElection with network failure √ 
-
-## Part 2B
-
-TestBasicAgree2B √
-最理想情况下的客户端请求 ,日志复制
-
-TestRPCBytes2B √
-保证一次agreement 每个 peer只发送一次 RPC
-
-TestFailAgree2B √ 
-
-TestFailNoAgree2B √
-
-TestConcurrentStarts2B √
-
-TestRejoin2B √
-
-TestBackup2B √
-
-TestCount2B 优化,减少一次选举需要的 RPC 次数
+  - [x] Part 2B
+    - [x] TestBasicAgree2B 最理想情况下的客户端请求 ,日志复制
+    - [x] TestRPCBytes2B 保证一次agreement 每个 peer只发送一次 RPC
+    - [x] TestFailAgree2B 
+    - [x] TestFailNoAgree2B 
+    - [x] TestConcurrentStarts2B 
+    - [x] TestRejoin2B 
+    - [x] TestBackup2B 
+    - [x] TestCount2B 优化,减少一次选举需要的 RPC 次数
 
 
 
