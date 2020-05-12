@@ -26,7 +26,7 @@ All labs and assignment for the course
     - [x] TestCount2B 优化,减少一次选举需要的 RPC 次数
 
   - [ ] Part 2C
-    - [x] some 2c persist simple Test
+    - [x] Some2cPersistSimpleTest
     - [ ] TestFigure82C
     - [ ] TestUnreliableAgree2C
     - [ ] TestFigure8Unreliable2C *****
