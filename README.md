@@ -28,7 +28,7 @@ All labs and assignment for the course
   - [ ] Part 2C
     - [x] Some2cPersistSimpleTest
     - [x] TestFigure82C
-    - [ ] TestUnreliableAgree2C
+    - [x] TestUnreliableAgree2C
     - [ ] TestFigure8Unreliable2C *****
     - [ ] TestUnreliableChurn2C *****
     - [x] TestReliableChurn2C
