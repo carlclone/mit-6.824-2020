@@ -74,3 +74,7 @@ Raft forces agreement by having followers adopt new leader's log
 ### 资料
 
 [课表](https://pdos.csail.mit.edu/6.824/schedule.html)
+
+
+某个场景的paper
+https://conferences.sigcomm.org/sigcomm/2015/pdf/papers/p85.pdf 
