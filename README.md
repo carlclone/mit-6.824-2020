@@ -78,4 +78,13 @@ Raft forces agreement by having followers adopt new leader's log
 
 
 某个场景的paper
-https://conferences.sigcomm.org/sigcomm/2015/pdf/papers/p85.pdf 
+https://conferences.sigcomm.org/sigcomm/2015/pdf/papers/p85.pdf
+
+ 
+## 思考记录
+
+加锁意义不明 每一段代码都要能说出为什么存在 意义是什么
+
+加锁的粒度可以很好的参考acid的3个情况 write write. Read write  write read 看你是要避免什么问题来决定锁的粒度 比如两个线程加一 write write问题
+
+并发编程的设计不能直接把语言转换过来 会出现糟糕的设计 实际上任何都是 最好定义好状态机 ，要用上一切最好的流程工具了 画图定义伪代码
