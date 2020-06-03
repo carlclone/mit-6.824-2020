@@ -62,7 +62,7 @@ if [ $# -gt 1 ]; then
 fi
 
 # Default to no test filtering unless otherwise specified
-test="TestInitialElection2A"
+test="TestBasicAgree2B"
 if [ $# -gt 2 ]; then
 	test="$3"
 fi
@@ -131,10 +131,10 @@ for i in $(seq "$((success+failed+1))" "$runs"); do
 
 	# Run the tester, passing -test.run if necessary
 	if [[ -z "$test" ]]; then
-		./tester -test.v 2> "./errs/test-${i}.err" > "./logs/test-${i}.log" &
+		./tester -test.v 2> "./logs/test-${i}.err" > "./logs/test-${i}.log" &
 		pid=$!
 	else
-		./tester -test.run "$test" -test.v 2> "./errs/test-${i}.err" > "./logs/test-${i}.log" &
+		./tester -test.run "$test" -test.v 2> "./logs/test-${i}.err" > "./logs/test-${i}.log" &
 		pid=$!
 	fi
 

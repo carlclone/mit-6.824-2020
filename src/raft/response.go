@@ -25,6 +25,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		//return
 	}
 
+	if rf.role == ROLE_CANDIDATE {
+		rf.becomeFollower(args.Term)
+	}
+
 	success := rf.comparePrevLog(args.PrevLogTerm, args.PrevLogIndex)
 
 	if success {
