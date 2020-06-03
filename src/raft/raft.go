@@ -163,7 +163,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	if isLeader {
 		index = rf.appendCommand(command)
 		term = rf.currentTerm
-		rf.print(LOG_REPLICA_1, "客户端发起command:%v isLeader:%v index:%v,term:%v", command, isLeader, index, term)
+		rf.print(LOG_REPLICA_1, "客户端发起command: isLeader:%v index:%v,term:%v", isLeader, index, term)
 	}
 
 	return index, term, isLeader
@@ -352,7 +352,7 @@ func (rf *Raft) serverNextEntriesToReplica(server int) []Entry {
 		res = []Entry{}
 	}
 	if len(res) != 0 {
-		rf.print(LOG_REPLICA_1, "准备复制给 server %v 的%v nI%v mI%v", server, res, rf.nextIndex[server], rf.matchIndex[server])
+		rf.print(LOG_REPLICA_1, "准备复制给 server %v 的 nI%v mI%v", server, rf.nextIndex[server], rf.matchIndex[server])
 	}
 
 	return res
@@ -379,7 +379,7 @@ func (rf *Raft) lastLog() Entry {
 }
 
 func (rf *Raft) appendLeadersLog(entries []Entry) {
-	rf.print(LOG_REPLICA_1, "开始 append leader 给的 log,  entry:%v", entries)
+	rf.print(LOG_REPLICA_1, "开始 append leader 给的 log,  entry")
 	startIndex := entries[0].Index
 	//entriesEndIndex := entries[len(entries)-1].Index
 
@@ -399,7 +399,7 @@ func (rf *Raft) appendLeadersLog(entries []Entry) {
 	//	}
 	//}
 	rf.persist()
-	rf.print(LOG_REPLICA_1, "append 完毕 %v", rf.log)
+	rf.print(LOG_REPLICA_1, "append 完毕")
 }
 
 func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {

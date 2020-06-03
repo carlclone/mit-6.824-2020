@@ -62,7 +62,7 @@ if [ $# -gt 1 ]; then
 fi
 
 # Default to no test filtering unless otherwise specified
-test="TestBasicAgree2B"
+test="TestRPCBytes2B"
 if [ $# -gt 2 ]; then
 	test="$3"
 fi
