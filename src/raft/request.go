@@ -6,7 +6,6 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		return false
 	}
 
-	rf.print(LOG_HEARTBEAT, "发送心跳包前给%v 当前角色:%v", server, rf.role)
 	args.LeaderCommitIndex = rf.commitIndex
 	args.Entries = rf.serverNextEntriesToReplica(server)
 
@@ -21,9 +20,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	}
 
 	rf.print(LOG_HEARTBEAT, "发送心跳包给%v 当前角色:%v", server, rf.role)
-	if args.Term != rf.currentTerm {
-		return false
-	}
+	//if args.Term != rf.currentTerm {
+	//	return false
+	//}
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
