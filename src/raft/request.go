@@ -66,9 +66,6 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // 发送请求
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	rf.print(LOG_VOTE, "发送 RV")
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 

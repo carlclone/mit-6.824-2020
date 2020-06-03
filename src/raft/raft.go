@@ -108,12 +108,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.mu.Lock()
 					rf.print(LOG_VOTE, "follower 超时,开始选举")
 					rf.role = ROLE_CANDIDATE
-					rf.becomeCandidate()
+
 					rf.mu.Unlock()
 				}
 
 			case ROLE_CANDIDATE:
-
+				rf.becomeCandidate()
 				select {
 				case <-rf.receiveAppendEntries:
 				case <-time.After(time.Duration((rand.Int63())%500+200) * time.Millisecond):
