@@ -103,19 +103,20 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				select {
 				case <-rf.receiveAppendEntries:
 				case <-rf.receiveVoteReqs:
-				case <-time.After(time.Duration((rand.Int63())%400+200) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
+				case <-time.After(time.Duration((rand.Int63())%500+200) * time.Millisecond): //每个 candidate 在开始一次选举的时候会重置一个随机的选举超时时间，然后一直等待直到选举超时；这样减小了在新的选举中再次发生选票瓜分情况的可能性。
 					//rf.becomeCandidate()
 					rf.mu.Lock()
 					rf.print(LOG_VOTE, "follower 超时,开始选举")
 					rf.role = ROLE_CANDIDATE
+					rf.becomeCandidate()
 					rf.mu.Unlock()
 				}
 
 			case ROLE_CANDIDATE:
-				rf.becomeCandidate()
+
 				select {
 				case <-rf.receiveAppendEntries:
-				case <-time.After(time.Duration((rand.Int63())%300+200) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%500+200) * time.Millisecond):
 
 				}
 			case ROLE_LEADER:
@@ -130,7 +131,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			case ROLE_LEADER:
 				rf.sendHeartBeats()
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}()
 

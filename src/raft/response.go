@@ -2,6 +2,7 @@ package raft
 
 //处理请求
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.print(LOG_HEARTBEAT, "收到心跳包来自%v", args.LeaderId)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	reply.Success = false
@@ -70,9 +71,14 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.becomeFollower(args.Term)
 	}
 
+	if rf.role != ROLE_FOLLOWER {
+		return
+	}
+
 	//2 前半句
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.isNewestLog(args.LastLogIndex, args.LastLogTerm) { //选举限制 5.2 5.4
 		reply.VoteGranted = true
+		rf.votedFor = args.CandidateId
 	}
 
 	reply.Term = rf.currentTerm

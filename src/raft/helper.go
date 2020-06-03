@@ -13,10 +13,13 @@ const (
 )
 
 func (rf *Raft) print(level int, format string, a ...interface{}) {
-	return
-	if
+	//return
+	//if
 	//level != LOG_ALL &&
-	level != LOG_PERSIST {
+	//level != LOG_PERSIST {
+	//	return
+	//}
+	if level != LOG_VOTE {
 		return
 	}
 

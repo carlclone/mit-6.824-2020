@@ -446,6 +446,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			if rf != nil {
 				index1, _, ok := rf.Start(cmd)
 				if ok {
+					DPrintf("leader %v start 成功 , cmd %v , index %v", starts, cmd, index1)
 					index = index1
 					break
 				}
@@ -460,15 +461,17 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
-				//DPrintf("commited 的数目 nd%v", nd)
+				DPrintf("commited 的数目 nd%v 期待数%v", nd, expectedServers)
 				if nd > 0 && nd >= expectedServers {
 					// committed
+					DPrintf("复制到了大多数 cmd %v", cmd1)
 					//都已经复制了并且命令也一致则通过
 					if cmd1 == cmd {
-						//DPrintf("cmd 一致")
+						DPrintf("cmd 一致 %v", cmd1)
 						// and it was the command we submitted.
 						return index
 					}
+					DPrintf("cmd 复制到大多数但不一致 %v", cmd1)
 				}
 				time.Sleep(20 * time.Millisecond)
 			}

@@ -891,6 +891,7 @@ func TestFigure8Unreliable2C(t *testing.T) {
 
 func internalChurn(t *testing.T, unreliable bool) {
 
+	//5个 server
 	servers := 5
 	cfg := make_config(t, servers, unreliable)
 	defer cfg.cleanup()
@@ -904,11 +905,14 @@ func internalChurn(t *testing.T, unreliable bool) {
 	stop := int32(0)
 
 	// create concurrent clients
+	//创建并发的客户端
 	cfn := func(me int, ch chan []int) {
 		var ret []int
 		ret = nil
 		defer func() { ch <- ret }()
 		values := []int{}
+
+		//
 		for atomic.LoadInt32(&stop) == 0 {
 			x := rand.Int()
 			index := -1
@@ -919,6 +923,7 @@ func internalChurn(t *testing.T, unreliable bool) {
 				rf := cfg.rafts[i]
 				cfg.mu.Unlock()
 				if rf != nil {
+					//尝试 start 每一个
 					index1, _, ok1 := rf.Start(x)
 					if ok1 {
 						ok = ok1
@@ -929,8 +934,11 @@ func internalChurn(t *testing.T, unreliable bool) {
 			if ok {
 				// maybe leader will commit our value, maybe not.
 				// but don't wait forever.
+				//leader 可能不会 commit 该值 , 但是不永远等待下去
+				//等待 10 , 20 ,....200毫秒,每次都看一下是否 commit
 				for _, to := range []int{10, 20, 50, 100, 200} {
 					nd, cmd := cfg.nCommitted(index)
+					//如果 commit 了, 检查是否一致, 一致放入 values 里
 					if nd > 0 {
 						if xx, ok := cmd.(int); ok {
 							if xx == x {
@@ -944,12 +952,14 @@ func internalChurn(t *testing.T, unreliable bool) {
 					time.Sleep(time.Duration(to) * time.Millisecond)
 				}
 			} else {
+				//没有 leader start 成功, 等待一段时间后重新开始
 				time.Sleep(time.Duration(79+me*17) * time.Millisecond)
 			}
 		}
 		ret = values
 	}
 
+	//相当于3 个客户端同时尝试 start 所有节点
 	ncli := 3
 	cha := []chan []int{}
 	for i := 0; i < ncli; i++ {
@@ -957,23 +967,29 @@ func internalChurn(t *testing.T, unreliable bool) {
 		go cfn(i, cha[i])
 	}
 
+	//随机断开
 	for iters := 0; iters < 20; iters++ {
 		if (rand.Int() % 1000) < 200 {
 			i := rand.Int() % servers
+			DPrintf("%v断开了", i)
 			cfg.disconnect(i)
 		}
 
+		//随机连接
 		if (rand.Int() % 1000) < 500 {
 			i := rand.Int() % servers
 			if cfg.rafts[i] == nil {
 				cfg.start1(i)
 			}
+			DPrintf("%v连接了", i)
 			cfg.connect(i)
 		}
 
+		//随机 crash !!!
 		if (rand.Int() % 1000) < 200 {
 			i := rand.Int() % servers
 			if cfg.rafts[i] != nil {
+				DPrintf("%v crash 了", i)
 				cfg.crash1(i)
 			}
 		}

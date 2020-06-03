@@ -50,7 +50,7 @@ if ! go test -c -o tester; then
 fi
 
 # Default to 100 runs unless otherwise specified
-runs=100
+runs=500
 if [ $# -gt 0 ]; then
 	runs="$1"
 fi
@@ -62,7 +62,7 @@ if [ $# -gt 1 ]; then
 fi
 
 # Default to no test filtering unless otherwise specified
-test=""
+test="TestInitialElection2A"
 if [ $# -gt 2 ]; then
 	test="$3"
 fi
