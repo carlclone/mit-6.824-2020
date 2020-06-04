@@ -108,7 +108,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.mu.Lock()
 					rf.print(LOG_VOTE, "follower 超时,开始选举")
 					rf.role = ROLE_CANDIDATE
-
 					rf.mu.Unlock()
 				}
 
@@ -129,6 +128,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		for {
 			switch rf.role {
 			case ROLE_LEADER:
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
 				rf.sendHeartBeats()
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -233,6 +234,8 @@ func (rf *Raft) becomeCandidate() {
 }
 
 func (rf *Raft) becomeLeader() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.print(LOG_ALL, "变成 leader")
 	rf.role = ROLE_LEADER
 	rf.votedFor = -1
