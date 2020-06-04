@@ -113,6 +113,7 @@ type Raft struct {
 	startNewElection            chan bool
 	concurrentSendVote          chan bool
 	concurrentSendAppendEntries chan bool
+	voteCount                   int
 }
 
 type RequestVoteArgs struct {
@@ -121,6 +122,7 @@ type RequestVoteArgs struct {
 }
 
 type RequestVoteReply struct {
+	Term int
 }
 
 type AppendEntriesArgs struct {
@@ -129,6 +131,7 @@ type AppendEntriesArgs struct {
 }
 
 type AppendEntriesReply struct {
+	Term              int
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
@@ -196,7 +199,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 
 				//处理投票
-				case <-rf.receiveRequestVote:
+				case request:=<-rf.receiveRequestVote:
+					acceptable:=rf.voteCommonHandler(request)
+					if !acceptable {
+						continue
+					}
+
 				//选举超时,开始新一轮选举
 				case <-time.After(rf.electionTimeOut()):
 					rf.role = ROLE_CANDIDATE
@@ -268,11 +276,83 @@ func (rf *Raft) electionTimeOut() time.Duration {
 
 
 func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool{
-	return false
+	args:=request.args
+	reply:=request.reply
+
+	//过期clock , 拒绝请求 , 并告知对方term
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		return false
+	}
+
+	//需要更新自己的term , 如果不是follower需要回退到follower
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		if rf.role!=ROLE_FOLLOWER {
+			rf.becomeFollower(args.Term)
+		}
+		//可以继续处理该请求
+		return true
+	}
+
+	return true
+}
+
+
+func (rf *Raft) voteCommonHandler(request VoteRequest) bool {
+	args:=request.args
+	reply:=request.reply
+
+	//过期clock , 拒绝请求 , 并告知对方term
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		return false
+	}
+
+	//需要更新自己的term , 如果不是follower需要回退到follower
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		if rf.role!=ROLE_FOLLOWER {
+			rf.becomeFollower(args.Term)
+		}
+		//可以继续处理该请求
+		return true
+	}
+
+	return true
+}
+
+
+func (rf *Raft) becomeFollower(term int) {
+	rf.role = ROLE_FOLLOWER
+	rf.voteFor = -1
+	rf.currentTerm = term
+	rf.persist()
+	rf.voteCount = 0
+	//rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
 }
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+/*
+ * Timer
+ * 模仿TCP协议里的重传Timer
+ */
+
+type Timer struct {
+
+}
 
 
 
