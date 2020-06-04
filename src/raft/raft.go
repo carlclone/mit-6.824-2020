@@ -62,9 +62,21 @@ type Entry struct {
 	Index int
 }
 
+
 type Request struct {
 	args  interface{}
 	reply interface{}
+}
+
+type VoteRequest struct {
+	args  *RequestVoteArgs
+	reply *RequestVoteReply
+}
+
+
+type AppendEntriesRequest struct {
+	args  *AppendEntriesArgs
+	reply *AppendEntriesReply
 }
 
 //
@@ -92,32 +104,35 @@ type Raft struct {
 	nextIndex  []int //下一个要发送给peers的entry的index , 用于定位 peer和leader日志不一致的范围
 	matchIndex []int //peer们最后一个确认复制的index ,用于apply
 
-	receiveRequestVote        chan Request
+	receiveRequestVote        chan VoteRequest
 	requestVoteHandleFinished chan bool
 
-	receiveAppendEntries        chan Request
+	receiveAppendEntries        chan AppendEntriesRequest
 	appendEntriesHandleFinished chan bool
 
-	startNewElection   chan bool
-	concurrentSendVote chan bool
+	startNewElection            chan bool
+	concurrentSendVote          chan bool
+	concurrentSendAppendEntries chan bool
 }
 
 type RequestVoteArgs struct {
-	Term         int
-	CandidateId  int
+	Term        int
+	CandidateId int
 }
 
 type RequestVoteReply struct {
 }
 
 type AppendEntriesArgs struct {
+	Term              int
+	LeaderId          int
 }
 
 type AppendEntriesReply struct {
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.receiveRequestVote <- Request{args, reply}
+	rf.receiveRequestVote <- VoteRequest{args, reply}
 	<-rf.requestVoteHandleFinished
 	return
 
@@ -129,7 +144,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	rf.receiveAppendEntries <- Request{args, reply}
+	rf.receiveAppendEntries <- AppendEntriesRequest{args, reply}
 	<-rf.appendEntriesHandleFinished
 	return
 }
@@ -172,7 +187,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			case ROLE_FOLLOWER:
 				select {
 				//处理心跳包
-				case <-rf.receiveAppendEntries:
+				case request:=<-rf.receiveAppendEntries:
+					//公共处理,并判断是否继续处理该请求
+					acceptable :=rf.appendEntriesCommonHandler(request)
+					if !acceptable {
+						continue
+					}
+
+
 				//处理投票
 				case <-rf.receiveRequestVote:
 				//选举超时,开始新一轮选举
@@ -183,11 +205,32 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			}
 		}
 	}()
-	//并发发送网络请求线程 心跳包 , 请求投票 , follower不发送任何请求
+
+	//并发发送网络请求线程 leader发送心跳包 , candidate请求投票 , follower不发送任何请求
 	go func() {
 		for {
 			switch rf.role {
 			case ROLE_LEADER:
+				select {
+				case <-rf.concurrentSendAppendEntries:
+					///////////////////////////////////////////////
+					for i, _ := range rf.peers {
+						if i != rf.me {
+							go func(i int) {
+								args := &AppendEntriesArgs{
+									Term:     rf.currentTerm,
+									LeaderId: rf.me,
+								}
+
+								reply := &AppendEntriesReply{}
+								rf.sendAppendEntries(i, args, reply)
+							}(i)
+
+						}
+					}
+					///////////////////////////////////////////////
+				}
+
 			case ROLE_CANDIDATE:
 				select {
 				case <-rf.concurrentSendVote:
@@ -222,6 +265,42 @@ func Make(peers []*labrpc.ClientEnd, me int,
 func (rf *Raft) electionTimeOut() time.Duration {
 	return time.Duration((rand.Int63())%500+200) * time.Millisecond
 }
+
+
+func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool{
+	return false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ----------------------- stable ---------------------------- //
 
@@ -330,3 +409,4 @@ func (rf *Raft) appendCommand(command interface{}) int {
 	rf.persist()
 	return nextIndex
 }
+
