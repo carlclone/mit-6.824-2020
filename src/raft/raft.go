@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"labgob"
 	"math/rand"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,7 +63,6 @@ type Entry struct {
 	Index int
 }
 
-
 type Request struct {
 	args  interface{}
 	reply interface{}
@@ -72,7 +72,6 @@ type VoteRequest struct {
 	args  *RequestVoteArgs
 	reply *RequestVoteReply
 }
-
 
 type AppendEntriesRequest struct {
 	args  *AppendEntriesArgs
@@ -114,6 +113,7 @@ type Raft struct {
 	concurrentSendVote          chan bool
 	concurrentSendAppendEntries chan bool
 	voteCount                   int
+	timer                       Timer
 }
 
 type RequestVoteArgs struct {
@@ -126,12 +126,12 @@ type RequestVoteReply struct {
 }
 
 type AppendEntriesArgs struct {
-	Term              int
-	LeaderId          int
+	Term     int
+	LeaderId int
 }
 
 type AppendEntriesReply struct {
-	Term              int
+	Term int
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
@@ -184,31 +184,32 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				//处理投票
 				case <-rf.receiveRequestVote:
 				//选举超时,新一轮选举
-				case <-time.After(rf.electionTimeOut()):
-					rf.startNewElection <- true
+				case <-rf.startNewElection:
+					rf.becomeCandidate()
 				}
 			case ROLE_FOLLOWER:
 				select {
 				//处理心跳包
-				case request:=<-rf.receiveAppendEntries:
+				case request := <-rf.receiveAppendEntries:
 					//公共处理,并判断是否继续处理该请求
-					acceptable :=rf.appendEntriesCommonHandler(request)
+					acceptable := rf.appendEntriesCommonHandler(request)
 					if !acceptable {
 						continue
 					}
 
 
 				//处理投票
-				case request:=<-rf.receiveRequestVote:
-					acceptable:=rf.voteCommonHandler(request)
+				case request := <-rf.receiveRequestVote:
+					acceptable := rf.voteCommonHandler(request)
 					if !acceptable {
 						continue
 					}
 
-				//选举超时,开始新一轮选举
-				case <-time.After(rf.electionTimeOut()):
-					rf.role = ROLE_CANDIDATE
-					rf.startNewElection <- true
+				case <-rf.startNewElection:
+					rf.becomeCandidate()
+
+
+
 				}
 			}
 		}
@@ -264,20 +265,42 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		}
 	}()
 
+	//定时器线程 , 只有candidate和follower有定时器
+	go func() {
+		ms := 5
+
+		rf.timer.start(rf.electionTimeOut())
+		for {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			rf.timer.tick(ms)
+			if rf.timer.reachTimeOut() {
+				switch rf.role {
+				case ROLE_CANDIDATE:
+					rf.startNewElection <- true
+				case ROLE_FOLLOWER:
+					rf.startNewElection <- true
+				}
+
+				//restart timer
+				rf.timer.start(rf.electionTimeOut())
+			}
+		}
+	}()
+
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 	return rf
 }
 
-func (rf *Raft) electionTimeOut() time.Duration {
-	return time.Duration((rand.Int63())%500+200) * time.Millisecond
+func (rf *Raft) electionTimeOut() int {
+	return int(rand.Int63())%500 + 200
+	//return time.Duration((rand.Int63())%500+200) * time.Millisecond
 }
 
-
-func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool{
-	args:=request.args
-	reply:=request.reply
+func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool {
+	args := request.args
+	reply := request.reply
 
 	//过期clock , 拒绝请求 , 并告知对方term
 	if args.Term < rf.currentTerm {
@@ -288,7 +311,7 @@ func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool{
 	//需要更新自己的term , 如果不是follower需要回退到follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
-		if rf.role!=ROLE_FOLLOWER {
+		if rf.role != ROLE_FOLLOWER {
 			rf.becomeFollower(args.Term)
 		}
 		//可以继续处理该请求
@@ -297,11 +320,10 @@ func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool{
 
 	return true
 }
-
 
 func (rf *Raft) voteCommonHandler(request VoteRequest) bool {
-	args:=request.args
-	reply:=request.reply
+	args := request.args
+	reply := request.reply
 
 	//过期clock , 拒绝请求 , 并告知对方term
 	if args.Term < rf.currentTerm {
@@ -312,7 +334,7 @@ func (rf *Raft) voteCommonHandler(request VoteRequest) bool {
 	//需要更新自己的term , 如果不是follower需要回退到follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
-		if rf.role!=ROLE_FOLLOWER {
+		if rf.role != ROLE_FOLLOWER {
 			rf.becomeFollower(args.Term)
 		}
 		//可以继续处理该请求
@@ -321,7 +343,6 @@ func (rf *Raft) voteCommonHandler(request VoteRequest) bool {
 
 	return true
 }
-
 
 func (rf *Raft) becomeFollower(term int) {
 	rf.role = ROLE_FOLLOWER
@@ -332,18 +353,24 @@ func (rf *Raft) becomeFollower(term int) {
 	//rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
 }
 
+func (rf *Raft) becomeCandidate() {
+	if rf.role == ROLE_CANDIDATE {
+		rf.print(LOG_ALL, "candidate新一轮选举")
+	} else {
+		rf.print(LOG_ALL, "变成 candidate")
+	}
 
+	rf.role = ROLE_CANDIDATE
+	rf.currentTerm++
+	rf.voteFor = rf.me
+	//rf.persist()
+	rf.voteCount = 1
 
+	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
 
-
-
-
-
-
-
-
-
-
+	//群发投票请求
+	rf.concurrentSendVote <- true
+}
 
 /*
  * Timer
@@ -351,33 +378,25 @@ func (rf *Raft) becomeFollower(term int) {
  */
 
 type Timer struct {
-
+	timeoutMs  int
+	timePassMs int
 }
 
+func (t *Timer) tick(msSinceLastTick int) {
+	t.timeoutMs += msSinceLastTick
+}
 
+func (t *Timer) start(timeoutMs int) {
+	t.timeoutMs = timeoutMs
+	t.timePassMs = 0
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+func (t *Timer) reachTimeOut() bool {
+	if t.timePassMs > t.timeoutMs {
+		return true
+	}
+	return false
+}
 
 
 
@@ -490,3 +509,35 @@ func (rf *Raft) appendCommand(command interface{}) int {
 	return nextIndex
 }
 
+
+const (
+	LOG_ALL       = 0
+	LOG_VOTE      = 1
+	LOG_HEARTBEAT = 2
+	LOG_REPLICA_1 = 3
+	LOG_PERSIST   = 4
+
+	LOG_LEADER = 10
+)
+
+func (rf *Raft) print(level int, format string, a ...interface{}) {
+	//return
+	//if
+	//level != LOG_ALL &&
+	//level != LOG_PERSIST {
+	//	return
+	//}
+	m := map[int]bool{
+		LOG_ALL:       true,
+		LOG_VOTE:      true,
+		LOG_HEARTBEAT: true,
+		LOG_REPLICA_1: true,
+		LOG_PERSIST:   false,
+	}
+	if !m[level] {
+		return
+	}
+
+	format = "server " + strconv.Itoa(rf.me) + format
+	DPrintf(format, a...)
+}
