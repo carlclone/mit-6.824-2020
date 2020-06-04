@@ -17,8 +17,12 @@ package raft
 //   in the same server.
 //
 
-import "sync"
-import "sync/atomic"
+import (
+	"bytes"
+	"labgob"
+	"sync"
+	"sync/atomic"
+)
 import "../labrpc"
 
 // import "bytes"
@@ -43,6 +47,26 @@ type ApplyMsg struct {
 	CommandIndex int
 }
 
+const (
+	ROLE_LEADER  = 1
+	ROLE_CANDIDATE = 2
+	ROLE_FOLLOWER    = 3
+)
+
+type Entry struct {
+	Command interface{}
+	/* 任期号用来检测多个日志副本之间的不一致情况
+	 * Leader 在特定的任期号内的一个日志索引处最多创建一个日志条目，同时日志条目在日志中的位置也从来不会改变。该点保证了上面的第一条特性。
+	 */
+	Term  int //
+	Index int
+}
+
+type Request struct {
+	args interface{}
+	reply interface{}
+}
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -53,85 +77,41 @@ type Raft struct {
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
+	role int //角色
 
-}
+	//持久化的
+	currentTerm int  //理解为logical clock , 当前的任期
+	voteFor int //投票对象
+	log []Entry
 
-// return currentTerm and whether this server
-// believes it is the leader.
-func (rf *Raft) GetState() (int, bool) {
+	//volatile
+	commitIndex int //当前已提交的最后一个index
+	lastApplied int //最后一个通知客户端完成复制的index
 
-	var term int
-	var isleader bool
-	// Your code here (2A).
-	return term, isleader
-}
+	//leader属性
+	nextIndex []int //下一个要发送给peers的entry的index , 用于定位 peer和leader日志不一致的范围
+	matchIndex []int //peer们最后一个确认复制的index ,用于apply
 
-//
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
-//
-func (rf *Raft) persist() {
-	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
-}
-
-
-//
-// restore previously persisted state.
-//
-func (rf *Raft) readPersist(data []byte) {
-	if data == nil || len(data) < 1 { // bootstrap without any state?
-		return
-	}
-	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	receiveRequestVote chan Request
+	requestVoteHandleFinished chan Request
 }
 
 
 
 
-//
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-//
+
 type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
+
 }
 
-//
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-//
 type RequestVoteReply struct {
-	// Your data here (2A).
 }
 
-//
-// example RequestVote RPC handler.
-//
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
+	rf.receiveRequestVote <- Request{args,reply}
+	 <- rf.requestVoteHandleFinished
+	return
+
 }
 
 //
@@ -169,51 +149,9 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 }
 
 
-//
-// the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
-// server isn't the leader, returns false. otherwise start the
-// agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
-// may fail or lose an election. even if the Raft instance has been killed,
-// this function should return gracefully.
-//
-// the first return value is the index that the command will appear at
-// if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
-// the leader.
-//
-func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
-
-	// Your code here (2B).
 
 
-	return index, term, isLeader
-}
 
-//
-// the tester doesn't halt goroutines created by Raft after each test,
-// but it does call the Kill() method. your code can use killed() to
-// check whether Kill() has been called. the use of atomic avoids the
-// need for a lock.
-//
-// the issue is that long-running goroutines use memory and may chew
-// up CPU time, perhaps causing later tests to fail and generating
-// confusing debug output. any goroutine with a long-running loop
-// should call killed() to check whether it should stop.
-//
-func (rf *Raft) Kill() {
-	atomic.StoreInt32(&rf.dead, 1)
-	// Your code here, if desired.
-}
-
-func (rf *Raft) killed() bool {
-	z := atomic.LoadInt32(&rf.dead)
-	return z == 1
-}
 
 //
 // the service or tester wants to create a Raft server. the ports
@@ -240,4 +178,123 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 
 	return rf
+}
+
+
+
+
+
+
+
+
+
+
+// ----------------------- stable ---------------------------- //
+
+// return currentTerm and whether this server
+// believes it is the leader.
+func (rf *Raft) GetState() (int, bool) {
+	return rf.currentTerm, rf.role == ROLE_LEADER
+}
+
+//
+// save Raft's persistent state to stable storage,
+// where it can later be retrieved after a crash and restart.
+// see paper's Figure 2 for a description of what should be persistent.
+//
+func (rf *Raft) persist() {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.voteFor)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
+}
+
+
+//
+// restore previously persisted state.
+//
+func (rf *Raft) readPersist(data []byte) {
+	if data == nil || len(data) < 1 { // bootstrap without any state?
+		return
+	}
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var votedFor int
+	var currentTerm int
+	var log []Entry
+	if d.Decode(&votedFor) != nil ||
+		d.Decode(&currentTerm) != nil ||
+		d.Decode(&log) != nil {
+	} else {
+		rf.voteFor = votedFor
+		rf.currentTerm = currentTerm
+		rf.log = log
+	}
+}
+
+
+//
+// the tester doesn't halt goroutines created by Raft after each test,
+// but it does call the Kill() method. your code can use killed() to
+// check whether Kill() has been called. the use of atomic avoids the
+// need for a lock.
+//
+// the issue is that long-running goroutines use memory and may chew
+// up CPU time, perhaps causing later tests to fail and generating
+// confusing debug output. any goroutine with a long-running loop
+// should call killed() to check whether it should stop.
+//
+func (rf *Raft) Kill() {
+	atomic.StoreInt32(&rf.dead, 1)
+	// Your code here, if desired.
+}
+
+func (rf *Raft) killed() bool {
+	z := atomic.LoadInt32(&rf.dead)
+	return z == 1
+}
+
+//
+// the service using Raft (e.g. a k/v server) wants to start
+// agreement on the next command to be appended to Raft's log. if this
+// server isn't the leader, returns false. otherwise start the
+// agreement and return immediately. there is no guarantee that this
+// command will ever be committed to the Raft log, since the leader
+// may fail or lose an election. even if the Raft instance has been killed,
+// this function should return gracefully.
+//
+// the first return value is the index that the command will appear at
+// if it's ever committed. the second return value is the current
+// term. the third return value is true if this server believes it is
+// the leader.
+//
+func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	index := -1
+	term := -1
+	isLeader := rf.isLeader()
+
+	if isLeader {
+		index = rf.appendCommand(command)
+		term = rf.currentTerm
+		//rf.print(LOG_REPLICA_1, "客户端发起command: isLeader:%v index:%v,term:%v", isLeader, index, term)
+	}
+
+	return index, term, isLeader
+}
+
+func (rf *Raft) isLeader() bool {
+	return rf.role == ROLE_LEADER
+}
+
+func (rf *Raft) appendCommand(command interface{}) int {
+	replicatedIndex := len(rf.log) - 1
+	nextIndex:=replicatedIndex+1
+	rf.log = append(rf.log, Entry{command, rf.currentTerm, nextIndex})
+	rf.persist()
+	return nextIndex
 }
