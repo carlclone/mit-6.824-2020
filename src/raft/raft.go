@@ -174,7 +174,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	return false
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
 }
 
 // Make() must return quickly, so it should start goroutines for any long-running work.
@@ -186,6 +187,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 	rf.peerCount = len(rf.peers)
 	rf.role = ROLE_FOLLOWER
+	rf.voteFor = -1
 
 	rf.electionTimer = Timer{stopped: true, timeoutMsGenerator: rf.electionTimeOut}
 	rf.heartBeatTimer = Timer{stopped: true, timeoutMsGenerator: func() int {
@@ -206,12 +208,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	/*
 	 * 事件流向 : 定时器线程,请求,响应产生事件,  主事件线程接收 ,处理 , 如果有需要并发的(网络请求),分配并发事件到并发线程
 	 */
-
+	rf.electionTimer.start()
 	//主事件循环线程
 	go func() {
 		for {
 			switch rf.role {
 			case ROLE_LEADER:
+				rf.heartBeatTimer.start()
 				select {
 				//处理心跳包
 				case <-rf.receiveAppendEntries:
@@ -231,7 +234,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case <-rf.startNewElection:
 					rf.concurrentSendVote <- true
 				//处理心跳包
-				case <-rf.receiveAppendEntries:
+				case request := <-rf.receiveAppendEntries:
+					rf.becomeFollower(request.args.Term)
+					rf.appendEntriesHandleFinished <- true
 				//处理投票
 				case <-rf.receiveRequestVote:
 
@@ -240,41 +245,47 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.becomeCandidate()
 				}
 			case ROLE_FOLLOWER:
-				rf.electionTimer.start()
-				rf.print(LOG_VOTE, " leader初始")
+
+				rf.print(LOG_VOTE, " follower初始")
 				select {
+				//开始选举
+				case <-rf.startNewElection:
+					rf.becomeCandidate()
 				//收到心跳包
 				case request := <-rf.receiveAppendEntries:
+					rf.print(LOG_ALL, "收到心跳包!!!!!!!!!!!!!!")
 					//公共处理,并判断是否继续处理该请求
 					acceptable := rf.appendEntriesCommonHandler(request)
 					if !acceptable {
+						rf.print(LOG_ALL, "appendentries unacceptable")
 						continue
 					}
+					rf.print(LOG_ALL, "收到心跳包,重置选举计时器")
+					rf.electionTimer.start()
 
 					request.reply.Term = rf.currentTerm
-
+					rf.appendEntriesHandleFinished <- true
 				//收到投票
 				case request := <-rf.receiveRequestVote:
 					rf.print(LOG_ALL, "收到投票请求")
 					acceptable := rf.voteCommonRequestHandler(request)
 					if !acceptable {
+						rf.print(LOG_ALL, "unacceptable request vote")
 						rf.requestVoteHandleFinished <- true
 						continue
 					}
+					rf.electionTimer.start()
 
 					request.reply.Term = rf.currentTerm
 
 					//&& rf.isNewestLog(args.LastLogIndex, args.LastLogTerm ) //选举限制 5.2 5.4
+					rf.print(LOG_ALL, "votefor:%v", rf.voteFor)
 					if rf.voteFor == -1 || rf.voteFor == request.args.CandidateId {
 						rf.print(LOG_ALL, "向xx投票")
 						request.reply.VoteGranted = true
 						rf.voteFor = request.args.CandidateId
 					}
 					rf.requestVoteHandleFinished <- true
-
-				//开始选举
-				case <-rf.startNewElection:
-					rf.becomeCandidate()
 				}
 			}
 		}
@@ -285,7 +296,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		for {
 			select {
 			case <-rf.concurrentSendAppendEntries:
-
+				rf.print(LOG_ALL, "群发心跳包")
 				///////////////////////////////////////////////
 				for i, _ := range rf.peers {
 					if i != rf.me {
@@ -332,9 +343,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			rf.electionTimer.tick(ms)
 			if rf.electionTimer.reachTimeOut() {
 				rf.startNewElection <- true
-
-				//restart electionTimer
-				rf.electionTimer.start()
 			}
 		}
 	}()
@@ -344,11 +352,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		ms := 5
 
 		for {
+			if rf.role != ROLE_LEADER {
+				continue
+			}
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 			rf.heartBeatTimer.tick(ms)
 			if rf.heartBeatTimer.reachTimeOut() {
-				rf.startNewElection <- true
-
+				rf.concurrentSendAppendEntries <- true
 				//restart heartBeatTimer
 				rf.heartBeatTimer.start()
 			}
@@ -513,6 +523,8 @@ func (t *Timer) start() {
 func (t *Timer) reachTimeOut() bool {
 	if t.timePassMs > t.timeoutMs {
 		//DPrintf("timer超时")
+		t.timePassMs = 0
+		t.stop()
 		return true
 	}
 	return false
