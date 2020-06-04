@@ -20,15 +20,15 @@ package raft
 import (
 	"bytes"
 	"labgob"
+	"math/rand"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 import "../labrpc"
 
 // import "bytes"
 // import "../labgob"
-
-
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -48,9 +48,9 @@ type ApplyMsg struct {
 }
 
 const (
-	ROLE_LEADER  = 1
+	ROLE_LEADER    = 1
 	ROLE_CANDIDATE = 2
-	ROLE_FOLLOWER    = 3
+	ROLE_FOLLOWER  = 3
 )
 
 type Entry struct {
@@ -63,7 +63,7 @@ type Entry struct {
 }
 
 type Request struct {
-	args interface{}
+	args  interface{}
 	reply interface{}
 }
 
@@ -80,90 +80,65 @@ type Raft struct {
 	role int //角色
 
 	//持久化的
-	currentTerm int  //理解为logical clock , 当前的任期
-	voteFor int //投票对象
-	log []Entry
+	currentTerm int //理解为logical clock , 当前的任期
+	voteFor     int //投票对象
+	log         []Entry
 
 	//volatile
 	commitIndex int //当前已提交的最后一个index
 	lastApplied int //最后一个通知客户端完成复制的index
 
 	//leader属性
-	nextIndex []int //下一个要发送给peers的entry的index , 用于定位 peer和leader日志不一致的范围
+	nextIndex  []int //下一个要发送给peers的entry的index , 用于定位 peer和leader日志不一致的范围
 	matchIndex []int //peer们最后一个确认复制的index ,用于apply
 
-	receiveRequestVote chan Request
-	requestVoteHandleFinished chan Request
+	receiveRequestVote        chan Request
+	requestVoteHandleFinished chan bool
+
+	receiveAppendEntries        chan Request
+	appendEntriesHandleFinished chan bool
+
+	startNewElection   chan bool
+	concurrentSendVote chan bool
 }
 
-
-
-
-
 type RequestVoteArgs struct {
-
+	Term         int
+	CandidateId  int
 }
 
 type RequestVoteReply struct {
 }
 
+type AppendEntriesArgs struct {
+}
+
+type AppendEntriesReply struct {
+}
+
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.receiveRequestVote <- Request{args,reply}
-	 <- rf.requestVoteHandleFinished
+	rf.receiveRequestVote <- Request{args, reply}
+	<-rf.requestVoteHandleFinished
 	return
 
 }
 
-//
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
-//
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
 }
 
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.receiveAppendEntries <- Request{args, reply}
+	<-rf.appendEntriesHandleFinished
+	return
+}
 
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	return false
+}
 
-
-
-
-//
-// the service or tester wants to create a Raft server. the ports
-// of all the Raft servers (including this one) are in peers[]. this
-// server's port is peers[me]. all the servers' peers[] arrays
-// have the same order. persister is a place for this server to
-// save its persistent state, and also initially holds the most
-// recent saved state, if any. applyCh is a channel on which the
-// tester or service expects Raft to send ApplyMsg messages.
-// Make() must return quickly, so it should start goroutines
-// for any long-running work.
-//
+// Make() must return quickly, so it should start goroutines for any long-running work.
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
@@ -171,23 +146,82 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.me = me
 
-	// Your initialization code here (2A, 2B, 2C).
+	//主事件循环线程
+	go func() {
+		for {
+			switch rf.role {
+			case ROLE_LEADER:
+				select {
+				//处理心跳包
+				case <-rf.receiveAppendEntries:
+				//处理投票
+				case <-rf.receiveRequestVote:
+				}
+			case ROLE_CANDIDATE:
+				select {
+				case <-rf.startNewElection:
+					rf.concurrentSendVote <- true
+				//处理心跳包
+				case <-rf.receiveAppendEntries:
+				//处理投票
+				case <-rf.receiveRequestVote:
+				//选举超时,新一轮选举
+				case <-time.After(rf.electionTimeOut()):
+					rf.startNewElection <- true
+				}
+			case ROLE_FOLLOWER:
+				select {
+				//处理心跳包
+				case <-rf.receiveAppendEntries:
+				//处理投票
+				case <-rf.receiveRequestVote:
+				//选举超时,开始新一轮选举
+				case <-time.After(rf.electionTimeOut()):
+					rf.role = ROLE_CANDIDATE
+					rf.startNewElection <- true
+				}
+			}
+		}
+	}()
+	//并发发送网络请求线程 心跳包 , 请求投票 , follower不发送任何请求
+	go func() {
+		for {
+			switch rf.role {
+			case ROLE_LEADER:
+			case ROLE_CANDIDATE:
+				select {
+				case <-rf.concurrentSendVote:
+
+					///////////////////////////////////
+					for i, _ := range rf.peers {
+						if i == rf.me {
+							continue
+						}
+						go func(i int) {
+							args := &RequestVoteArgs{
+								Term:        rf.currentTerm,
+								CandidateId: rf.me,
+							}
+							reply := &RequestVoteReply{}
+							rf.sendRequestVote(i, args, reply)
+						}(i)
+					}
+					///////////////////////////////////
+
+				}
+			}
+		}
+	}()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-
 	return rf
 }
 
-
-
-
-
-
-
-
-
+func (rf *Raft) electionTimeOut() time.Duration {
+	return time.Duration((rand.Int63())%500+200) * time.Millisecond
+}
 
 // ----------------------- stable ---------------------------- //
 
@@ -212,7 +246,6 @@ func (rf *Raft) persist() {
 	rf.persister.SaveRaftState(data)
 }
 
-
 //
 // restore previously persisted state.
 //
@@ -234,7 +267,6 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.log = log
 	}
 }
-
 
 //
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -293,7 +325,7 @@ func (rf *Raft) isLeader() bool {
 
 func (rf *Raft) appendCommand(command interface{}) int {
 	replicatedIndex := len(rf.log) - 1
-	nextIndex:=replicatedIndex+1
+	nextIndex := replicatedIndex + 1
 	rf.log = append(rf.log, Entry{command, rf.currentTerm, nextIndex})
 	rf.persist()
 	return nextIndex
