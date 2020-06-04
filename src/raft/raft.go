@@ -113,7 +113,10 @@ type Raft struct {
 	concurrentSendVote          chan bool
 	concurrentSendAppendEntries chan bool
 	voteCount                   int
-	timer                       Timer
+	electionTimer               Timer
+	heartBeatTimer              Timer
+	someOneVoted                chan bool
+	peerCount                   int
 }
 
 type RequestVoteArgs struct {
@@ -163,6 +166,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	rf.peerCount = len(rf.peers)
+	rf.role = ROLE_FOLLOWER
+
+	rf.electionTimer = Timer{stopped: true, timeoutMsGenerator: rf.electionTimeOut}
+	rf.heartBeatTimer = Timer{stopped: true, timeoutMsGenerator: func() int {
+		return 20
+	}}
+
+	/*
+	 * 事件流向 : 定时器线程,请求,响应产生事件,  主事件线程接收 ,处理 , 如果有需要并发的(网络请求),分配并发事件到并发线程
+	 */
 
 	//主事件循环线程
 	go func() {
@@ -177,19 +191,27 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 			case ROLE_CANDIDATE:
 				select {
+
+				case <-rf.someOneVoted:
+					rf.voteCount++
+					if rf.voteCount > len(peers)/2 {
+						rf.becomeLeader()
+					}
 				case <-rf.startNewElection:
 					rf.concurrentSendVote <- true
 				//处理心跳包
 				case <-rf.receiveAppendEntries:
 				//处理投票
 				case <-rf.receiveRequestVote:
+
 				//选举超时,新一轮选举
 				case <-rf.startNewElection:
 					rf.becomeCandidate()
 				}
 			case ROLE_FOLLOWER:
+				rf.electionTimer.start()
 				select {
-				//处理心跳包
+				//收到心跳包
 				case request := <-rf.receiveAppendEntries:
 					//公共处理,并判断是否继续处理该请求
 					acceptable := rf.appendEntriesCommonHandler(request)
@@ -198,18 +220,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					}
 
 
-				//处理投票
+				//收到投票
 				case request := <-rf.receiveRequestVote:
 					acceptable := rf.voteCommonHandler(request)
 					if !acceptable {
 						continue
 					}
 
+				//开始选举
 				case <-rf.startNewElection:
 					rf.becomeCandidate()
-
-
-
 				}
 			}
 		}
@@ -218,71 +238,74 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//并发发送网络请求线程 leader发送心跳包 , candidate请求投票 , follower不发送任何请求
 	go func() {
 		for {
-			switch rf.role {
-			case ROLE_LEADER:
-				select {
-				case <-rf.concurrentSendAppendEntries:
-					///////////////////////////////////////////////
-					for i, _ := range rf.peers {
-						if i != rf.me {
-							go func(i int) {
-								args := &AppendEntriesArgs{
-									Term:     rf.currentTerm,
-									LeaderId: rf.me,
-								}
+			select {
+			case <-rf.concurrentSendAppendEntries:
 
-								reply := &AppendEntriesReply{}
-								rf.sendAppendEntries(i, args, reply)
-							}(i)
-
-						}
-					}
-					///////////////////////////////////////////////
-				}
-
-			case ROLE_CANDIDATE:
-				select {
-				case <-rf.concurrentSendVote:
-
-					///////////////////////////////////
-					for i, _ := range rf.peers {
-						if i == rf.me {
-							continue
-						}
+				///////////////////////////////////////////////
+				for i, _ := range rf.peers {
+					if i != rf.me {
 						go func(i int) {
-							args := &RequestVoteArgs{
-								Term:        rf.currentTerm,
-								CandidateId: rf.me,
+							args := &AppendEntriesArgs{
+								Term:     rf.currentTerm,
+								LeaderId: rf.me,
 							}
-							reply := &RequestVoteReply{}
-							rf.sendRequestVote(i, args, reply)
-						}(i)
-					}
-					///////////////////////////////////
 
+							reply := &AppendEntriesReply{}
+							rf.sendAppendEntries(i, args, reply)
+						}(i)
+
+					}
 				}
+				///////////////////////////////////////////////
+			case <-rf.concurrentSendVote:
+
+				///////////////////////////////////
+				for i, _ := range rf.peers {
+					if i == rf.me {
+						continue
+					}
+					go func(i int) {
+						args := &RequestVoteArgs{
+							Term:        rf.currentTerm,
+							CandidateId: rf.me,
+						}
+						reply := &RequestVoteReply{}
+						rf.sendRequestVote(i, args, reply)
+					}(i)
+				}
+				///////////////////////////////////
 			}
 		}
 	}()
 
-	//定时器线程 , 只有candidate和follower有定时器
+	//选举超时定时器线程
 	go func() {
 		ms := 5
 
-		rf.timer.start(rf.electionTimeOut())
 		for {
 			time.Sleep(time.Duration(ms) * time.Millisecond)
-			rf.timer.tick(ms)
-			if rf.timer.reachTimeOut() {
-				switch rf.role {
-				case ROLE_CANDIDATE:
-					rf.startNewElection <- true
-				case ROLE_FOLLOWER:
-					rf.startNewElection <- true
-				}
+			rf.electionTimer.tick(ms)
+			if rf.electionTimer.reachTimeOut() {
+				rf.startNewElection <- true
 
-				//restart timer
-				rf.timer.start(rf.electionTimeOut())
+				//restart electionTimer
+				rf.electionTimer.start()
+			}
+		}
+	}()
+
+	//心跳超时定时器
+	go func() {
+		ms := 5
+
+		for {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			rf.heartBeatTimer.tick(ms)
+			if rf.heartBeatTimer.reachTimeOut() {
+				rf.startNewElection <- true
+
+				//restart heartBeatTimer
+				rf.heartBeatTimer.start(rf.electionTimeOut())
 			}
 		}
 	}()
@@ -345,6 +368,7 @@ func (rf *Raft) voteCommonHandler(request VoteRequest) bool {
 }
 
 func (rf *Raft) becomeFollower(term int) {
+
 	rf.role = ROLE_FOLLOWER
 	rf.voteFor = -1
 	rf.currentTerm = term
@@ -372,22 +396,49 @@ func (rf *Raft) becomeCandidate() {
 	rf.concurrentSendVote <- true
 }
 
+func (rf *Raft) becomeLeader() {
+	rf.print(LOG_ALL, "变成 leader")
+	rf.role = ROLE_LEADER
+	rf.voteFor = -1
+	rf.persist()
+	rf.voteCount = 0
+
+	//复制阶段初始化
+	rf.matchIndex = make([]int, rf.peerCount)
+	rf.nextIndex = make([]int, rf.peerCount)
+	//for i, _ := range rf.nextIndex {
+	//rf.nextIndex[i] = rf.lastLogIndex() + 1
+	//}
+
+	//开启心跳包定时器线程
+	rf.heartBeatTimer.start()
+	//停止选举定时器
+	rf.electionTimer.stop()
+
+}
+
 /*
  * Timer
  * 模仿TCP协议里的重传Timer
  */
 
 type Timer struct {
-	timeoutMs  int
-	timePassMs int
+	timeoutMs          int
+	timePassMs         int
+	stopped            bool
+	timeoutMsGenerator func() int
 }
 
 func (t *Timer) tick(msSinceLastTick int) {
+	if t.stopped {
+		return
+	}
 	t.timeoutMs += msSinceLastTick
 }
 
-func (t *Timer) start(timeoutMs int) {
-	t.timeoutMs = timeoutMs
+func (t *Timer) start() {
+	t.stopped = false
+	t.timeoutMs = t.timeoutMsGenerator()
 	t.timePassMs = 0
 }
 
@@ -398,8 +449,13 @@ func (t *Timer) reachTimeOut() bool {
 	return false
 }
 
+func (t *Timer) stop() {
+	t.stopped = true
+}
 
-
+func (t *Timer) reset() {
+	t.timePassMs = 0
+}
 
 // ----------------------- stable ---------------------------- //
 
@@ -508,7 +564,6 @@ func (rf *Raft) appendCommand(command interface{}) int {
 	rf.persist()
 	return nextIndex
 }
-
 
 const (
 	LOG_ALL       = 0
