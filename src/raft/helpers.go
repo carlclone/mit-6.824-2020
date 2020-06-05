@@ -45,6 +45,7 @@ func (rf *Raft) tryApply() {
 		rf.print(LOG_PERSIST, "apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, rf.log)
 		rf.lastApplied++
 		log := rf.log[rf.lastApplied]
+		rf.print(LOG_PERSIST, "apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, log)
 		rf.applyCh <- ApplyMsg{true, log.Command, log.Index}
 	}
 }
