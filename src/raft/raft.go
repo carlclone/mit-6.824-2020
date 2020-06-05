@@ -84,6 +84,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peerCount = len(rf.peers)
 	rf.role = ROLE_FOLLOWER
 	rf.voteFor = -1
+	rf.log = append(rf.log, Entry{}) //设置dummyHead
 
 	rf.electionTimer = Timer{stopped: true, timeoutMsGenerator: rf.electionTimeOut}
 	rf.heartBeatTimer = Timer{stopped: true, timeoutMsGenerator: func() int {
@@ -107,6 +108,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			switch rf.role {
 
 			case ROLE_LEADER:
+				rf.mu.Lock() //和start互斥
 				select {
 				//处理心跳请求
 				case request := <-rf.reqsAERcvd:
@@ -118,6 +120,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case request := <-rf.respAERcvd:
 					rf.leaderRespAEHandler(request)
 				}
+				rf.mu.Unlock()
 
 			case ROLE_CANDIDATE:
 				//rf.heartBeatTimer.stop()
@@ -179,7 +182,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			if rf.role == ROLE_LEADER {
 				rf.concurrentSendAE()
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 
 	}()
@@ -234,6 +237,7 @@ func (rf *Raft) becomeFollower(term int) {
 	rf.persist()
 	rf.voteCount = 0
 
+	//转变成follower的时候不能重置channel , 因为还得继续处理请求
 	//rf.initChannels()
 	//rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
 }
@@ -251,7 +255,7 @@ func (rf *Raft) becomeCandidate() {
 	//rf.persist()
 	rf.voteCount = 1
 
-	//rf.initChannels()
+	rf.initChannels()
 
 	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
 
@@ -270,14 +274,14 @@ func (rf *Raft) becomeLeader() {
 	//复制阶段初始化
 	rf.matchIndex = make([]int, rf.peerCount)
 	rf.nextIndex = make([]int, rf.peerCount)
-	//for i, _ := range rf.nextIndex {
-	//rf.nextIndex[i] = rf.lastLogIndex() + 1
-	//}
+	for i, _ := range rf.nextIndex {
+		rf.nextIndex[i] = rf.lastLogIndex() + 1
+	}
 
-	//rf.initChannels()
+	rf.initChannels()
 
 	//开启心跳包定时器线程
-	rf.heartBeatTimer.start()
+	//rf.heartBeatTimer.start()
 
 }
 
@@ -288,8 +292,8 @@ func (rf *Raft) initChannels() {
 	rf.concurrentSendVote = make(chan bool, 50)
 	rf.concurrentSendAppendEntries = make(chan bool, 50)
 
-	rf.finishReqsRVHandle = make(chan bool, 50)
-	rf.finishReqsAEHandle = make(chan bool, 50)
+	rf.finishReqsRVHandle = make(chan bool)
+	rf.finishReqsAEHandle = make(chan bool)
 
 	rf.reqsRVRcvd = make(chan VoteRequest, 50)
 	rf.reqsAERcvd = make(chan AppendEntriesRequest, 50)
