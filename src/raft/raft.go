@@ -130,7 +130,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case request := <-rf.reqsRVRcvd:
 					rf.candReqsRVHandler(request)
 				//选举超时,新一轮选举
-				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%500+300) * time.Millisecond):
 					rf.candElectTimeoutHandler()
 				//处理投票响应
 				case request := <-rf.respRVRcvd:
@@ -147,7 +147,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 				select {
 				//选举超时
-				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%500+300) * time.Millisecond):
 					rf.followerElectTimeoutHandler()
 				//收到心跳包
 				case request := <-rf.reqsAERcvd:
@@ -162,17 +162,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	}()
 
 	//并发发送网络请求线程 leader发送心跳包 , candidate请求投票 , follower不发送任何请求
-	go func() {
-		for {
-			select {
-			case <-rf.concurrentSendAppendEntries:
-				rf.concurrentSendAE()
-			case <-rf.concurrentSendVote:
-				rf.concurrentSendRV()
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}()
+	//go func() {
+	//	for {
+	//		select {
+	//		case <-rf.concurrentSendAppendEntries:
+	//			rf.concurrentSendAE()
+	//		case <-rf.concurrentSendVote:
+	//			rf.concurrentSendRV()
+	//		}
+	//		time.Sleep(5 * time.Millisecond)
+	//	}
+	//}()
 
 	go func() {
 		for {
@@ -256,7 +256,8 @@ func (rf *Raft) becomeCandidate() {
 	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
 
 	//群发投票请求
-	rf.concurrentSendVote <- true
+	//rf.concurrentSendVote <- true
+	rf.concurrentSendRV()
 }
 
 func (rf *Raft) becomeLeader() {

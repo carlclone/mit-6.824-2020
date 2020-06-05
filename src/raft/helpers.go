@@ -8,27 +8,51 @@ import (
 )
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.reqsRVRcvd <- VoteRequest{args, reply}
+	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
+		rf.becomeFollower(args.Term)
+		reply.Term = rf.currentTerm
+	}
 
+	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
+		reply.Term = rf.currentTerm
+		return
+	}
+
+	rf.reqsRVRcvd <- VoteRequest{args, reply}
 	<-rf.finishReqsRVHandle
 	rf.print(LOG_ALL, "投票请求处理完毕 %v", reply.VoteGranted)
 	return
 
 }
 
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+
+	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
+		rf.becomeFollower(args.Term)
+		reply.Term = rf.currentTerm
+	}
+
+	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
+		reply.Term = rf.currentTerm
+		return
+	}
+
+	rf.reqsAERcvd <- AppendEntriesRequest{args, reply}
+	<-rf.finishReqsAEHandle
+	return
+}
+
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	if ok {
+		if rf.othersHasBiggerTerm(reply.Term, rf.currentTerm) {
+			rf.becomeFollower(reply.Term)
+		}
+
 		rf.respRVRcvd <- VoteRequest{args, reply}
 	}
 	return ok
-}
-
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	rf.reqsAERcvd <- AppendEntriesRequest{args, reply}
-	<-rf.finishReqsAEHandle
-	return
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
