@@ -4,7 +4,8 @@ func (rf *Raft) candElectTimeoutHandler() {
 	rf.becomeCandidate()
 }
 
-func (rf *Raft) handleRespRV(request VoteRequest) {
+// cand 收到响应投票,票数++ , 判断是否 -> leader
+func (rf *Raft) candRespRVHandler(request VoteRequest) {
 	args := request.args
 	reply := request.reply
 
@@ -12,10 +13,6 @@ func (rf *Raft) handleRespRV(request VoteRequest) {
 	acceptable := rf.voteCommonResponseHandler(VoteRequest{args, reply})
 	if !acceptable {
 		rf.print(LOG_ALL, "unacceptable")
-		return
-	}
-
-	if rf.role != ROLE_CANDIDATE {
 		return
 	}
 
@@ -28,13 +25,9 @@ func (rf *Raft) handleRespRV(request VoteRequest) {
 			rf.becomeLeader()
 		}
 	}
-
 }
 
-func (rf *Raft) candRespRVHandler(request VoteRequest) {
-
-}
-
+//cand收到投票 , 公共处理
 func (rf *Raft) candReqsRVHandler(request VoteRequest) {
 	acceptable := rf.voteCommonRequestHandler(request)
 	if !acceptable {
@@ -44,7 +37,15 @@ func (rf *Raft) candReqsRVHandler(request VoteRequest) {
 	}
 }
 
+//cand收到心跳 , 只需要按照公共处理
 func (rf *Raft) candReqsAEHandler(request AppendEntriesRequest) {
-	rf.becomeFollower(request.args.Term)
+	//公共处理,并判断是否继续处理该请求
+	acceptable := rf.appendEntriesCommonHandler(request)
+	if !acceptable {
+		rf.print(LOG_ALL, "appendentries unacceptable")
+		rf.finishReqsAEHandle <- true
+		return
+	}
+
 	rf.finishReqsAEHandle <- true
 }
