@@ -108,7 +108,7 @@ func TestReElection2A(t *testing.T) {
 	////心跳阶段的 bug
 	DPrintf("已有leader的情况下,再重连一个本来是leader的peer,不影响新leader 测试通过")
 	//
-	time.Sleep(2 * time.Second)
+	//time.Sleep(2 * time.Second)
 	cfg.end()
 }
 

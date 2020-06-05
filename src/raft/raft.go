@@ -150,17 +150,26 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
-	rf.print(LOG_ALL, "收到的投票结果 %v", reply.VoteGranted)
-
 	if ok {
+		rf.print(LOG_ALL, "收到的投票结果 %v", reply.VoteGranted)
 		acceptable := rf.voteCommonResponseHandler(VoteRequest{args, reply})
 		if !acceptable {
 			rf.print(LOG_ALL, "unacceptable")
 			return ok
 		}
+
+		if rf.role != ROLE_CANDIDATE {
+			return ok
+		}
+
 		if reply.VoteGranted {
 			rf.print(LOG_ALL, "收到支持投票")
-			rf.someOneVoted <- true
+			rf.print(LOG_ALL, "vote++")
+			rf.voteCount++
+			if rf.voteCount > rf.peerCount/2 {
+				rf.print(LOG_ALL, "成为leader")
+				rf.becomeLeader()
+			}
 		}
 
 	}
@@ -194,22 +203,22 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		return 20
 	}}
 
+	//channels
 	rf.startNewElection = make(chan bool)
 	rf.someOneVoted = make(chan bool, 50)
-	rf.requestVoteHandleFinished = make(chan bool)
-	rf.appendEntriesHandleFinished = make(chan bool)
 
 	rf.concurrentSendVote = make(chan bool)
 	rf.concurrentSendAppendEntries = make(chan bool)
 
+	rf.requestVoteHandleFinished = make(chan bool)
+	rf.appendEntriesHandleFinished = make(chan bool)
+
 	rf.receiveRequestVote = make(chan VoteRequest, 50)
 	rf.receiveAppendEntries = make(chan AppendEntriesRequest, 50)
-	rf.someOneVoted = make(chan bool, 50)
 
 	/*
 	 * 事件流向 : 定时器线程,请求,响应产生事件,  主事件线程接收 ,处理 , 如果有需要并发的(网络请求),分配并发事件到并发线程
 	 */
-	rf.electionTimer.start()
 	//主事件循环线程
 	go func() {
 		for {
@@ -230,16 +239,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				//处理投票
 				case <-rf.receiveRequestVote:
 				}
-			case ROLE_CANDIDATE:
-				select {
 
-				case <-rf.someOneVoted:
-					rf.print(LOG_ALL, "vote++")
-					rf.voteCount++
-					if rf.voteCount > len(peers)/2 {
-						rf.print(LOG_ALL, "成为leader")
-						rf.becomeLeader()
-					}
+			case ROLE_CANDIDATE:
+				rf.electionTimer.start()
+				select {
 				case <-rf.startNewElection:
 					rf.concurrentSendVote <- true
 				//处理心跳包
@@ -247,13 +250,22 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.becomeFollower(request.args.Term)
 					rf.appendEntriesHandleFinished <- true
 				//处理投票
-				case <-rf.receiveRequestVote:
+				case request := <-rf.receiveRequestVote:
+					acceptable := rf.voteCommonRequestHandler(request)
+					if !acceptable {
+						rf.print(LOG_ALL, "unacceptable request vote")
+						rf.requestVoteHandleFinished <- true
+						continue
+					}
 
 				//选举超时,新一轮选举
 				case <-rf.startNewElection:
 					rf.becomeCandidate()
 				}
+				rf.electionTimer.stop()
+
 			case ROLE_FOLLOWER:
+				rf.electionTimer.start()
 
 				rf.print(LOG_VOTE, " follower初始")
 				select {
@@ -271,7 +283,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						continue
 					}
 					rf.print(LOG_ALL, "收到心跳包,重置选举计时器")
-					rf.electionTimer.start()
 
 					request.reply.Term = rf.currentTerm
 					rf.appendEntriesHandleFinished <- true
@@ -285,7 +296,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						rf.requestVoteHandleFinished <- true
 						continue
 					}
-					rf.electionTimer.start()
 
 					request.reply.Term = rf.currentTerm
 
@@ -297,7 +307,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						rf.voteFor = request.args.CandidateId
 					}
 					rf.requestVoteHandleFinished <- true
+
 				}
+				rf.electionTimer.stop()
 			}
 		}
 	}()
@@ -453,6 +465,9 @@ func (rf *Raft) voteCommonResponseHandler(request VoteRequest) bool {
 
 func (rf *Raft) becomeFollower(term int) {
 
+	if rf.role == ROLE_LEADER {
+		rf.heartBeatTimer.stop()
+	}
 	rf.role = ROLE_FOLLOWER
 	rf.voteFor = -1
 	rf.currentTerm = term
