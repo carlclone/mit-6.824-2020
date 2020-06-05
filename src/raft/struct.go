@@ -13,8 +13,8 @@ package raft
 //
 type ApplyMsg struct {
 	CommandValid bool
-	Command      interface{}
-	CommandIndex int
+	Command      interface{} //被复制的内容
+	CommandIndex int         //内容在复制机里的索引
 }
 
 const (
@@ -25,11 +25,14 @@ const (
 
 type Entry struct {
 	Command interface{}
-	/* 任期号用来检测多个日志副本之间的不一致情况
+
+	/*
+	 * 任期号用来检测多个日志副本之间的不一致情况
 	 * Leader 在特定的任期号内的一个日志索引处最多创建一个日志条目，同时日志条目在日志中的位置也从来不会改变。该点保证了上面的第一条特性。
 	 */
-	Term  int //
-	Index int
+
+	Term  int //该entry被复制时的term
+	Index int //所处位置
 }
 
 type Request struct {
@@ -48,8 +51,10 @@ type AppendEntriesRequest struct {
 }
 
 type RequestVoteArgs struct {
-	Term        int
-	CandidateId int
+	Term         int //发出请求时的term
+	CandidateId  int
+	LastLogIndex int //最后一个log的index
+	LastLogTerm  int // 同上 , 两个组合起来用于判断该peer是否有最新的log , 没有则不投票
 }
 
 type RequestVoteReply struct {
@@ -57,11 +62,25 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
+// prev last next , 分别是前一个 最后一个 , 下一个
 type AppendEntriesArgs struct {
-	Term     int
-	LeaderId int
+	Term              int     //当前 term
+	LeaderId          int     // leader的id
+	PrevLogIndex      int     // 前一个log , 用来比对不一致的情况
+	PrevLogTerm       int     // 同上
+	Entries           []Entry //leader "猜测" follower缺失的entry
+	LeaderCommitIndex int     // leader已提交的最后一个index
 }
 
 type AppendEntriesReply struct {
-	Term int
+	Term              int
+	Success           bool
+	NextIndex         int
+	MatchIndex        int
+	AppendSuccess     bool
+	NeedMaintainIndex bool
+	From              int
+
+	ConflictTerm  int
+	ConflictIndex int
 }
