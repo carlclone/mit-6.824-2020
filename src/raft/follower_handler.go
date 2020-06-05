@@ -1,31 +1,31 @@
 package raft
 
-func (rf *Raft) handleFollowerElectTimeout() {
+func (rf *Raft) followerElectTimeoutHandler() {
 	rf.becomeCandidate()
 }
 
-func (rf *Raft) followerReqsAERcvd(request AppendEntriesRequest) {
+func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 	rf.print(LOG_ALL, "收到心跳包!!!!!!!!!!!!!!")
 	//公共处理,并判断是否继续处理该请求
 	acceptable := rf.appendEntriesCommonHandler(request)
 	if !acceptable {
 		rf.print(LOG_ALL, "appendentries unacceptable")
-		rf.appendEntriesHandleFinished <- true
+		rf.finishReqsAEHandle <- true
 		return
 	}
 	rf.print(LOG_ALL, "收到心跳包,重置选举计时器")
 
 	request.reply.Term = rf.currentTerm
-	rf.appendEntriesHandleFinished <- true
+	rf.finishReqsAEHandle <- true
 	DPrintf("心跳包请求处理完毕")
 }
 
-func (rf *Raft) followerReqsRVRcvd(request VoteRequest) {
+func (rf *Raft) followerReqsRVHandler(request VoteRequest) {
 	rf.print(LOG_ALL, "收到投票请求")
 	acceptable := rf.voteCommonRequestHandler(request)
 	if !acceptable {
 		rf.print(LOG_ALL, "unacceptable request vote")
-		rf.requestVoteHandleFinished <- true
+		rf.finishReqsRVHandle <- true
 		return
 	}
 
@@ -38,6 +38,6 @@ func (rf *Raft) followerReqsRVRcvd(request VoteRequest) {
 		request.reply.VoteGranted = true
 		rf.voteFor = request.args.CandidateId
 	}
-	rf.requestVoteHandleFinished <- true
+	rf.finishReqsRVHandle <- true
 
 }
