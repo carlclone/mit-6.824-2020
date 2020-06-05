@@ -33,10 +33,11 @@ func (rf *Raft) updateLeaderCommitStatus() {
 		if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
 			rf.print(LOG_PERSIST, "更新commitIndex:", rf.log)
 			rf.commitIndex = N
+			rf.tryApply()
 		}
 		N++
 	}
-	rf.tryApply()
+
 }
 
 func (rf *Raft) tryApply() {

@@ -117,9 +117,9 @@ func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
 		} else {
 			rf.commitIndex = leaderCommitIndex
 		}
+		rf.print(LOG_PERSIST, "更新commitIndex:%v", rf.commitIndex)
+		rf.tryApply()
 	}
-	rf.tryApply()
-	rf.print(LOG_PERSIST, "更新commitIndex:%v", rf.commitIndex)
 
 }
 
