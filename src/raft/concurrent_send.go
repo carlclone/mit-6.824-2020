@@ -39,7 +39,9 @@ func (rf *Raft) concurrentSendRV() {
 		Term:        rf.currentTerm,
 		CandidateId: rf.me,
 	}
-
+	lastLog := rf.lastLog()
+	args.LastLogTerm = lastLog.Term
+	args.LastLogIndex = lastLog.Index
 	for i, _ := range rf.peers {
 		if i == rf.me {
 			continue

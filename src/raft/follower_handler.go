@@ -53,7 +53,6 @@ func (rf *Raft) followerReqsRVHandler(request VoteRequest) {
 	//follower 判断是否向其投票
 	args := request.args
 
-	//&& rf.isNewestLog(args.LastLogIndex, args.LastLogTerm ) //选举限制 5.2 5.4
 	rf.print(LOG_ALL, "votefor:%v", rf.voteFor)
 	if (rf.voteFor == -1 || rf.voteFor == request.args.CandidateId) && rf.isNewestLog(args.LastLogIndex, args.LastLogTerm) {
 		rf.print(LOG_ALL, "向xx投票")
