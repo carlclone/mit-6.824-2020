@@ -60,6 +60,7 @@ type RequestVoteArgs struct {
 type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
+	From        int
 }
 
 // prev last next , 分别是前一个 最后一个 , 下一个

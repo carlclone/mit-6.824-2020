@@ -17,27 +17,28 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 	reply.ConflictTerm = -1
 
 	success := rf.comparePrevLog(args.PrevLogTerm, args.PrevLogIndex)
-	rf.print(LOG_ALL, "success stat:%v", success)
+
 	if success {
 		if len(args.Entries) != 0 {
+			rf.print(LOG_ALL, "上一个log一致，有新log，开始append")
 			rf.appendLeadersLog(args.Entries)
+
 			reply.Success = true
 			reply.MatchIndex = args.PrevLogIndex + len(args.Entries)
 			reply.NextIndex = rf.lastLogIndex() + 1
-			rf.print(LOG_ALL, "nextIndex是%v", reply.NextIndex)
 			reply.NeedMaintainIndex = true
-			rf.print(LOG_REPLICA_1, "成功处理心跳包")
-
 		}
 		rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
 	} else {
-		//2C的优化实现
-		rf.print(LOG_ALL, "怎么跑到2c来了")
-		if args.PrevLogIndex <= len(rf.log)-1 {
-			prevlog := rf.log[args.PrevLogIndex]
-			reply.ConflictTerm = prevlog.Term
-			reply.ConflictIndex = rf.findFirstIndexOfTerm(prevlog.Term)
-		}
+
+		//if args.PrevLogIndex <= len(rf.log)-1 {
+		//	//2C的优化实现
+		//	rf.print(LOG_ALL,"2C优化实现")
+		//	prevlog := rf.log[args.PrevLogIndex]
+		//	reply.ConflictTerm = prevlog.Term
+		//	reply.ConflictIndex = rf.findFirstIndexOfTerm(prevlog.Term)
+		//}
+		rf.print(LOG_ALL, "LOG不一致，回退一个")
 		reply.NextIndex = args.PrevLogIndex
 		reply.MatchIndex = -1
 		reply.Success = true
@@ -52,10 +53,10 @@ func (rf *Raft) followerReqsRVHandler(request VoteRequest) {
 
 	//follower 判断是否向其投票
 	args := request.args
+	request.reply.From = rf.me
 
-	rf.print(LOG_ALL, "votefor:%v", rf.voteFor)
 	if (rf.voteFor == -1 || rf.voteFor == request.args.CandidateId) && rf.isNewestLog(args.LastLogIndex, args.LastLogTerm) {
-		rf.print(LOG_ALL, "向xx投票")
+		rf.print(LOG_ALL, "向%v投票", args.CandidateId)
 		request.reply.VoteGranted = true
 		rf.voteFor = request.args.CandidateId
 	}
@@ -80,7 +81,7 @@ func (rf *Raft) comparePrevLog(prevLogTerm int, prevLogIndex int) bool {
 }
 
 func (rf *Raft) appendLeadersLog(entries []Entry) {
-	rf.print(LOG_REPLICA_1, "开始 append leader 给的 log,  entry")
+	//rf.print(LOG_REPLICA_1, "开始 append leader 给的 log,  entry")
 	startIndex := entries[0].Index
 	//entriesEndIndex := entries[len(entries)-1].Index
 
@@ -100,7 +101,7 @@ func (rf *Raft) appendLeadersLog(entries []Entry) {
 	//	}
 	//}
 	rf.persist()
-	rf.print(LOG_REPLICA_1, "append 完毕 %v", rf.log)
+	//rf.print(LOG_REPLICA_1, "append 完毕 %v", rf.log)
 }
 
 func (rf *Raft) lastLogIndex() int {
@@ -108,9 +109,7 @@ func (rf *Raft) lastLogIndex() int {
 }
 
 func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
-	if rf.role != ROLE_FOLLOWER {
-		return
-	}
+
 	if leaderCommitIndex > rf.commitIndex {
 		lastLogIndex := rf.lastLogIndex()
 		if leaderCommitIndex > lastLogIndex {
@@ -120,7 +119,7 @@ func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
 		}
 	}
 	rf.tryApply()
-	rf.print(LOG_PERSIST, "更新 follower commitindex 完毕 %v", rf.commitIndex)
+	rf.print(LOG_PERSIST, "更新commitIndex:%v", rf.commitIndex)
 
 }
 
@@ -153,14 +152,14 @@ func (rf *Raft) findFirstIndexOfTerm(prevLogTerm int) int {
 
 func (rf *Raft) othersHasBiggerTerm(othersTerm int, currentTerm int) bool {
 	if othersTerm > currentTerm {
-		rf.print(LOG_ALL, "收到更大的 term  other%v curr%v", othersTerm, currentTerm)
+		//rf.print(LOG_ALL, "收到更大的 term  other%v curr%v", othersTerm, currentTerm)
 	}
 	return othersTerm > currentTerm
 }
 
 func (rf *Raft) othersHasSmallTerm(othersTerm int, term int) bool {
 	if othersTerm < term {
-		rf.print(LOG_ALL, "收到过期 term other:%v curr:%v", othersTerm, term)
+		//rf.print(LOG_ALL, "收到过期 term other:%v curr:%v", othersTerm, term)
 	}
 
 	return othersTerm < term

@@ -31,7 +31,7 @@ func (rf *Raft) updateLeaderCommitStatus() {
 		//}
 
 		if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
-			rf.print(LOG_PERSIST, "达到大多数 %v", rf.log)
+			rf.print(LOG_PERSIST, "更新commitIndex:", rf.log)
 			rf.commitIndex = N
 		}
 		N++
@@ -42,7 +42,7 @@ func (rf *Raft) updateLeaderCommitStatus() {
 func (rf *Raft) tryApply() {
 
 	if rf.commitIndex > rf.lastApplied {
-		rf.print(LOG_PERSIST, "尝试 apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, rf.log)
+		rf.print(LOG_PERSIST, "apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, rf.log)
 		rf.lastApplied++
 		log := rf.log[rf.lastApplied]
 		rf.applyCh <- ApplyMsg{true, log.Command, log.Index}
@@ -62,7 +62,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.reqsRVRcvd <- VoteRequest{args, reply}
 	<-rf.finishReqsRVHandle
-	rf.print(LOG_ALL, "投票请求处理完毕 %v", reply.VoteGranted)
 	return
 
 }
@@ -115,7 +114,7 @@ func (rf *Raft) electionTimeOut() int {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-	rf.print(LOG_ALL, "is leader %v", rf.role == ROLE_LEADER)
+	//rf.print(LOG_ALL, "is leader %v", rf.role == ROLE_LEADER)
 	return rf.currentTerm, rf.role == ROLE_LEADER
 }
 

@@ -2,7 +2,6 @@ package raft
 
 func (rf *Raft) concurrentSendAE() {
 
-	rf.print(LOG_ALL, "群发心跳包")
 	for i, _ := range rf.peers {
 		if i != rf.me {
 			go func(i int) {
@@ -33,7 +32,6 @@ func (rf *Raft) concurrentSendAE() {
 }
 
 func (rf *Raft) concurrentSendRV() {
-	rf.print(LOG_ALL, "群发投票")
 
 	args := &RequestVoteArgs{
 		Term:        rf.currentTerm,
@@ -46,8 +44,8 @@ func (rf *Raft) concurrentSendRV() {
 		if i == rf.me {
 			continue
 		}
-		go func(i int) {
 
+		go func(i int) {
 			reply := &RequestVoteReply{}
 			rf.sendRequestVote(i, args, reply)
 		}(i)
@@ -56,15 +54,12 @@ func (rf *Raft) concurrentSendRV() {
 
 func (rf *Raft) serverNextEntriesToReplica(server int) []Entry {
 	nextIndex := rf.nextIndex[server]
-	rf.print(LOG_ALL, "nextIndex:::%v", nextIndex)
+
 	var res []Entry
 	if rf.lastLogIndex() >= nextIndex {
 		res = rf.log[nextIndex:]
 	} else {
 		res = []Entry{}
-	}
-	if len(res) != 0 {
-		rf.print(LOG_REPLICA_1, "准备复制给 server %v 的 nI%v mI%v res:%v", server, rf.nextIndex[server], rf.matchIndex[server], res)
 	}
 
 	return res

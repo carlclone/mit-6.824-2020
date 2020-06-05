@@ -43,6 +43,8 @@ func (rf *Raft) print(level int, format string, a ...interface{}) {
 		return
 	}
 
-	format = "server " + strconv.Itoa(rf.me) + format
+	m2 := []string{"LEADER", "CANDIDATE", "FOLLOWER"}
+
+	format = "server " + strconv.Itoa(rf.me) + "role " + m2[rf.role] + "term " + strconv.Itoa(rf.currentTerm) + format
 	DPrintf(format, a...)
 }

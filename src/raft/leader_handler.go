@@ -22,23 +22,24 @@ func (rf *Raft) leaderRespAEHandler(request AppendEntriesRequest) {
 		//2C优化
 		// leader要做的事 :   从后往前找到term=conflictTerm的log , 如果找到了 , 要设置nextIndex = 该log的index
 		//如果没找到 , nextIndex=conflictIndex
-		if reply.ConflictTerm != -1 {
-			logLen := len(rf.log)
-			rf.print(LOG_ALL, "conflict,conflictIndex %v", reply.ConflictIndex)
-
-			rf.nextIndex[server] = reply.ConflictIndex
-
-			for i := logLen - 1; i >= 0; i-- {
-				if rf.log[i].Term == reply.ConflictTerm {
-					rf.nextIndex[server] = rf.log[i].Index
-				}
-			}
-
-		} else {
-			rf.nextIndex[server] = reply.NextIndex
-		}
+		//if reply.ConflictTerm != -1 {
+		//	logLen := len(rf.log)
+		//	rf.print(LOG_ALL, "conflict,conflictIndex %v", reply.ConflictIndex)
+		//
+		//	rf.nextIndex[server] = reply.ConflictIndex
+		//
+		//	for i := logLen - 1; i >= 0; i-- {
+		//		if rf.log[i].Term == reply.ConflictTerm {
+		//			rf.nextIndex[server] = rf.log[i].Index
+		//		}
+		//	}
+		//
+		//} else {
+		rf.nextIndex[server] = reply.NextIndex
+		//}
 
 		if reply.MatchIndex != -1 {
+			rf.print(LOG_ALL, "维护matchIndex from %v,matchIndex:%v", server, reply.MatchIndex)
 			rf.matchIndex[server] = reply.MatchIndex
 			rf.updateLeaderCommitStatus()
 		}

@@ -148,8 +148,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				//rf.heartBeatTimer.stop()
 				//rf.electionTimer.start()
 
-				rf.print(LOG_VOTE, " follower初始")
-
 				select {
 				//选举超时
 				case <-time.After(time.Duration((rand.Int63())%500+300) * time.Millisecond):
@@ -229,7 +227,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 // become的同时要重置/初始化角色相关属性 ,channel
 func (rf *Raft) becomeFollower(term int) {
-
+	rf.print(LOG_ALL, "becomeFollower")
 	if rf.role == ROLE_LEADER {
 		rf.heartBeatTimer.stop()
 	}
@@ -246,9 +244,9 @@ func (rf *Raft) becomeFollower(term int) {
 
 func (rf *Raft) becomeCandidate() {
 	if rf.role == ROLE_CANDIDATE {
-		rf.print(LOG_ALL, "candidate新一轮选举")
+		rf.print(LOG_ALL, "newCandidateRound")
 	} else {
-		rf.print(LOG_ALL, "变成 candidate")
+		rf.print(LOG_ALL, "becomeCandidate")
 	}
 
 	rf.role = ROLE_CANDIDATE
@@ -259,15 +257,13 @@ func (rf *Raft) becomeCandidate() {
 
 	rf.initChannels()
 
-	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
-
 	//群发投票请求
 	//rf.concurrentSendVote <- true
 	rf.concurrentSendRV()
 }
 
 func (rf *Raft) becomeLeader() {
-	rf.print(LOG_ALL, "变成 leader")
+	rf.print(LOG_ALL, "becomeLeader")
 	rf.role = ROLE_LEADER
 	rf.voteFor = -1
 	rf.persist()

@@ -9,8 +9,7 @@ func (rf *Raft) candRespRVHandler(request VoteRequest) {
 	reply := request.reply
 
 	if reply.VoteGranted {
-		rf.print(LOG_ALL, "收到支持投票")
-		rf.print(LOG_ALL, "vote++")
+		rf.print(LOG_ALL, "收到支持投票，来自%v", reply.From)
 		rf.voteCount++
 		if rf.voteCount > rf.peerCount/2 {
 			rf.print(LOG_ALL, "成为leader")
