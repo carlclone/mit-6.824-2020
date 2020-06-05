@@ -218,7 +218,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.heartBeatTimer.start()
 				select {
 				//处理心跳包
-				case <-rf.receiveAppendEntries:
+				case request := <-rf.receiveAppendEntries:
+					//公共处理,并判断是否继续处理该请求
+					acceptable := rf.appendEntriesCommonHandler(request)
+					if !acceptable {
+						rf.print(LOG_ALL, "appendentries unacceptable")
+						rf.appendEntriesHandleFinished <- true
+						continue
+					}
+					rf.appendEntriesHandleFinished <- true
 				//处理投票
 				case <-rf.receiveRequestVote:
 				}
