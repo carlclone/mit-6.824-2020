@@ -8,7 +8,7 @@ func (rf *Raft) followerElectTimeoutHandler() {
 func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 	rf.print(LOG_ALL, "收到心跳包!!!!!!!!!!!!!!")
 	//公共处理,并判断是否继续处理该请求
-	acceptable := rf.appendEntriesCommonHandler(request)
+	acceptable := rf.appendEntriesCommonReqsHandler(request)
 	if !acceptable {
 		rf.print(LOG_ALL, "appendentries unacceptable")
 		rf.finishReqsAEHandle <- true

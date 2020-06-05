@@ -40,7 +40,7 @@ func (rf *Raft) candReqsRVHandler(request VoteRequest) {
 //cand收到心跳 , 只需要按照公共处理
 func (rf *Raft) candReqsAEHandler(request AppendEntriesRequest) {
 	//公共处理,并判断是否继续处理该请求
-	acceptable := rf.appendEntriesCommonHandler(request)
+	acceptable := rf.appendEntriesCommonReqsHandler(request)
 	if !acceptable {
 		rf.print(LOG_ALL, "appendentries unacceptable")
 		rf.finishReqsAEHandle <- true
