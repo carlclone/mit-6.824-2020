@@ -7,6 +7,48 @@ import (
 	"sync/atomic"
 )
 
+func (rf *Raft) isMajority(num int) bool {
+	var res bool
+	if num > rf.peerCount/2 {
+		res = true
+	} else {
+		res = false
+	}
+	return res
+}
+func (rf *Raft) updateLeaderCommitStatus() {
+	N := rf.commitIndex + 1
+	for N <= rf.lastLogIndex() {
+		num := 1
+		for i, _ := range rf.matchIndex {
+			if rf.matchIndex[i] >= N {
+				num++
+			}
+		}
+
+		//if len(rf.log)-1 >= N {
+		//	rf.print(LOG_LEADER, "更新 leader 的 commitIndex , matchIndex:%v commitIndex%v term:%v currT:%v", rf.matchIndex, rf.commitIndex, rf.log[N].Term, rf.currentTerm)
+		//}
+
+		if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
+			rf.print(LOG_PERSIST, "达到大多数 %v", rf.log)
+			rf.commitIndex = N
+		}
+		N++
+	}
+	rf.tryApply()
+}
+
+func (rf *Raft) tryApply() {
+
+	if rf.commitIndex > rf.lastApplied {
+		rf.print(LOG_PERSIST, "尝试 apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, rf.log)
+		rf.lastApplied++
+		log := rf.log[rf.lastApplied]
+		rf.applyCh <- ApplyMsg{true, log.Command, log.Index}
+	}
+}
+
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
 		rf.becomeFollower(args.Term)

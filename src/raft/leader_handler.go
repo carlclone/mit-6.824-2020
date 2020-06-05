@@ -40,6 +40,7 @@ func (rf *Raft) leaderRespAEHandler(request AppendEntriesRequest) {
 
 		if reply.MatchIndex != -1 {
 			rf.matchIndex[server] = reply.MatchIndex
+			rf.updateLeaderCommitStatus()
 		}
 	}
 

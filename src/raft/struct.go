@@ -74,12 +74,12 @@ type AppendEntriesArgs struct {
 
 type AppendEntriesReply struct {
 	Term              int
-	Success           bool
-	NextIndex         int
-	MatchIndex        int
-	AppendSuccess     bool
-	NeedMaintainIndex bool
-	From              int
+	Success           bool //
+	NextIndex         int  //follower告知leader下一个要复制的index
+	MatchIndex        int  //follower告知leader 维护matchIndex
+	AppendSuccess     bool //是否append成功
+	NeedMaintainIndex bool //是否需要维护nextIndex
+	From              int  //reply来自?
 
 	ConflictTerm  int
 	ConflictIndex int

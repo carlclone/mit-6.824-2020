@@ -72,6 +72,7 @@ type Raft struct {
 	concurrentSendAppendEntries chan bool
 
 	someOneVoted chan bool
+	applyCh      chan ApplyMsg
 }
 
 // Make() must return quickly, so it should start goroutines for any long-running work.
@@ -85,6 +86,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.role = ROLE_FOLLOWER
 	rf.voteFor = -1
 	rf.log = append(rf.log, Entry{}) //设置dummyHead
+	rf.applyCh = applyCh
 
 	rf.electionTimer = Timer{stopped: true, timeoutMsGenerator: rf.electionTimeOut}
 	rf.heartBeatTimer = Timer{stopped: true, timeoutMsGenerator: func() int {

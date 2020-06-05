@@ -10,8 +10,14 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 	reply := request.reply
 	args := request.args
 
-	success := rf.comparePrevLog(args.PrevLogTerm, args.PrevLogIndex)
+	reply.Success = false
+	reply.NeedMaintainIndex = false
+	reply.From = rf.me
+	reply.ConflictIndex = -1
+	reply.ConflictTerm = -1
 
+	success := rf.comparePrevLog(args.PrevLogTerm, args.PrevLogIndex)
+	rf.print(LOG_ALL, "success stat:%v", success)
 	if success {
 		if len(args.Entries) != 0 {
 			rf.appendLeadersLog(args.Entries)
@@ -26,6 +32,7 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 		rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
 	} else {
 		//2C的优化实现
+		rf.print(LOG_ALL, "怎么跑到2c来了")
 		if args.PrevLogIndex <= len(rf.log)-1 {
 			prevlog := rf.log[args.PrevLogIndex]
 			reply.ConflictTerm = prevlog.Term
@@ -113,6 +120,7 @@ func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
 			rf.commitIndex = leaderCommitIndex
 		}
 	}
+	rf.tryApply()
 	rf.print(LOG_PERSIST, "更新 follower commitindex 完毕 %v", rf.commitIndex)
 
 }
