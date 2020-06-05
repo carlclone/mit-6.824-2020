@@ -1,6 +1,7 @@
 package raft
 
 func (rf *Raft) followerElectTimeoutHandler() {
+	//to candidate
 	rf.becomeCandidate()
 }
 
@@ -13,9 +14,11 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 		rf.finishReqsAEHandle <- true
 		return
 	}
+
+	//follower不需要做任何事,只要重置定时器
+
 	rf.print(LOG_ALL, "收到心跳包,重置选举计时器")
 
-	request.reply.Term = rf.currentTerm
 	rf.finishReqsAEHandle <- true
 	DPrintf("心跳包请求处理完毕")
 }
@@ -29,7 +32,7 @@ func (rf *Raft) followerReqsRVHandler(request VoteRequest) {
 		return
 	}
 
-	request.reply.Term = rf.currentTerm
+	//follower 判断是否向其投票
 
 	//&& rf.isNewestLog(args.LastLogIndex, args.LastLogTerm ) //选举限制 5.2 5.4
 	rf.print(LOG_ALL, "votefor:%v", rf.voteFor)

@@ -90,24 +90,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	}}
 
 	//channels
-	rf.electTimeOut = make(chan bool, 50)
-	rf.someOneVoted = make(chan bool, 50)
-
-	rf.concurrentSendVote = make(chan bool, 50)
-	rf.concurrentSendAppendEntries = make(chan bool, 50)
-
-	rf.finishReqsRVHandle = make(chan bool, 50)
-	rf.finishReqsAEHandle = make(chan bool, 50)
-
-	rf.reqsRVRcvd = make(chan VoteRequest, 50)
-	rf.reqsAERcvd = make(chan AppendEntriesRequest, 50)
-
-	rf.respRVRcvd = make(chan VoteRequest, 50)
-	rf.respAERcvd = make(chan AppendEntriesRequest, 50)
+	rf.initChannels()
 
 	/*
 	 * 可以并发 : 群发投票请求 , 群发心跳包
-	 * 不可以并发: 投票响应处理,心跳响应处理,投票请求处理,心跳请求处理,定时器事件
+	 * 不可以并发: 投票响应处理,心跳响应处理,投票请求处理,心跳请求处理,定时器事件 , Start()
 	 */
 
 	/*
@@ -234,6 +221,8 @@ func (rf *Raft) becomeFollower(term int) {
 	rf.currentTerm = term
 	rf.persist()
 	rf.voteCount = 0
+
+	rf.initChannels()
 	//rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
 }
 
@@ -249,6 +238,8 @@ func (rf *Raft) becomeCandidate() {
 	rf.voteFor = rf.me
 	//rf.persist()
 	rf.voteCount = 1
+
+	rf.initChannels()
 
 	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
 
@@ -270,7 +261,26 @@ func (rf *Raft) becomeLeader() {
 	//rf.nextIndex[i] = rf.lastLogIndex() + 1
 	//}
 
+	rf.initChannels()
+
 	//开启心跳包定时器线程
 	rf.heartBeatTimer.start()
 
+}
+
+func (rf *Raft) initChannels() {
+	rf.electTimeOut = make(chan bool, 50)
+	rf.someOneVoted = make(chan bool, 50)
+
+	rf.concurrentSendVote = make(chan bool, 50)
+	rf.concurrentSendAppendEntries = make(chan bool, 50)
+
+	rf.finishReqsRVHandle = make(chan bool, 50)
+	rf.finishReqsAEHandle = make(chan bool, 50)
+
+	rf.reqsRVRcvd = make(chan VoteRequest, 50)
+	rf.reqsAERcvd = make(chan AppendEntriesRequest, 50)
+
+	rf.respRVRcvd = make(chan VoteRequest, 50)
+	rf.respAERcvd = make(chan AppendEntriesRequest, 50)
 }

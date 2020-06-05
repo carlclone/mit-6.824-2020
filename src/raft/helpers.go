@@ -52,6 +52,7 @@ func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool {
 	//需要更新自己的term , 如果不是follower需要回退到follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
+		reply.Term = rf.currentTerm
 		rf.becomeFollower(args.Term)
 		//可以继续处理该请求
 		return true
