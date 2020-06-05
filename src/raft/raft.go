@@ -103,13 +103,13 @@ type Raft struct {
 	nextIndex  []int //下一个要发送给peers的entry的index , 用于定位 peer和leader日志不一致的范围
 	matchIndex []int //peer们最后一个确认复制的index ,用于apply
 
-	receiveRequestVote        chan VoteRequest
+	reqsRVRcvd                chan VoteRequest
 	requestVoteHandleFinished chan bool
 
-	receiveAppendEntries        chan AppendEntriesRequest
+	reqsAERcvd                  chan AppendEntriesRequest
 	appendEntriesHandleFinished chan bool
 
-	startNewElection            chan bool
+	electTimeOut                chan bool
 	concurrentSendVote          chan bool
 	concurrentSendAppendEntries chan bool
 	voteCount                   int
@@ -139,7 +139,7 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.receiveRequestVote <- VoteRequest{args, reply}
+	rf.reqsRVRcvd <- VoteRequest{args, reply}
 
 	<-rf.requestVoteHandleFinished
 	rf.print(LOG_ALL, "投票请求处理完毕 %v", reply.VoteGranted)
@@ -177,7 +177,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	rf.receiveAppendEntries <- AppendEntriesRequest{args, reply}
+	rf.reqsAERcvd <- AppendEntriesRequest{args, reply}
 	<-rf.appendEntriesHandleFinished
 	return
 }
@@ -204,17 +204,22 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	}}
 
 	//channels
-	rf.startNewElection = make(chan bool)
+	rf.electTimeOut = make(chan bool, 50)
 	rf.someOneVoted = make(chan bool, 50)
 
-	rf.concurrentSendVote = make(chan bool)
-	rf.concurrentSendAppendEntries = make(chan bool)
+	rf.concurrentSendVote = make(chan bool, 50)
+	rf.concurrentSendAppendEntries = make(chan bool, 50)
 
-	rf.requestVoteHandleFinished = make(chan bool)
-	rf.appendEntriesHandleFinished = make(chan bool)
+	rf.requestVoteHandleFinished = make(chan bool, 50)
+	rf.appendEntriesHandleFinished = make(chan bool, 50)
 
-	rf.receiveRequestVote = make(chan VoteRequest, 50)
-	rf.receiveAppendEntries = make(chan AppendEntriesRequest, 50)
+	rf.reqsRVRcvd = make(chan VoteRequest, 50)
+	rf.reqsAERcvd = make(chan AppendEntriesRequest, 50)
+
+	/*
+	 * 可以并发 : 群发投票请求 , 群发心跳包
+	 * 不可以并发: 投票响应处理,心跳响应处理,投票请求处理,心跳请求处理,定时器事件
+	 */
 
 	/*
 	 * 事件流向 : 定时器线程,请求,响应产生事件,  主事件线程接收 ,处理 , 如果有需要并发的(网络请求),分配并发事件到并发线程
@@ -223,11 +228,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go func() {
 		for {
 			switch rf.role {
+			// ----------------------------------- LEADER -------------------------------------- //
 			case ROLE_LEADER:
-				rf.heartBeatTimer.start()
 				select {
-				//处理心跳包
-				case request := <-rf.receiveAppendEntries:
+				//处理心跳请求
+				case request := <-rf.reqsAERcvd:
 					//公共处理,并判断是否继续处理该请求
 					acceptable := rf.appendEntriesCommonHandler(request)
 					if !acceptable {
@@ -236,21 +241,34 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						continue
 					}
 					rf.appendEntriesHandleFinished <- true
-				//处理投票
-				case <-rf.receiveRequestVote:
-				}
+				//处理投票请求
+				case request := <-rf.reqsRVRcvd:
+					acceptable := rf.voteCommonRequestHandler(request)
+					if !acceptable {
+						rf.print(LOG_ALL, "unacceptable request vote")
+						rf.requestVoteHandleFinished <- true
+						continue
+					}
+				//处理心跳响应
+				case <-rf.respAERcvd:
 
+				}
+			// ----------------------------------- LEADER -------------------------------------- //
+
+			// ----------------------------------- CANDIDATE -------------------------------------- //
 			case ROLE_CANDIDATE:
+				rf.heartBeatTimer.stop()
 				rf.electionTimer.start()
 				select {
-				case <-rf.startNewElection:
+				//选举超时
+				case <-rf.electTimeOut:
 					rf.concurrentSendVote <- true
-				//处理心跳包
-				case request := <-rf.receiveAppendEntries:
+				//处理心跳请求
+				case request := <-rf.reqsAERcvd:
 					rf.becomeFollower(request.args.Term)
 					rf.appendEntriesHandleFinished <- true
-				//处理投票
-				case request := <-rf.receiveRequestVote:
+				//处理投票请求
+				case request := <-rf.reqsRVRcvd:
 					acceptable := rf.voteCommonRequestHandler(request)
 					if !acceptable {
 						rf.print(LOG_ALL, "unacceptable request vote")
@@ -259,55 +277,31 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					}
 
 				//选举超时,新一轮选举
-				case <-rf.startNewElection:
+				case <-rf.electTimeOut:
 					rf.becomeCandidate()
+				//处理投票响应
+				case <-rf.respRVRcvd:
 				}
+
 				rf.electionTimer.stop()
+			// ----------------------------------- CANDIDATE -------------------------------------- //
 
 			case ROLE_FOLLOWER:
+				rf.heartBeatTimer.stop()
 				rf.electionTimer.start()
 
 				rf.print(LOG_VOTE, " follower初始")
+
 				select {
 				//开始选举
-				case <-rf.startNewElection:
-					rf.becomeCandidate()
+				case <-rf.electTimeOut:
+					rf.handleFollowerElectTimeout()
 				//收到心跳包
-				case request := <-rf.receiveAppendEntries:
-					rf.print(LOG_ALL, "收到心跳包!!!!!!!!!!!!!!")
-					//公共处理,并判断是否继续处理该请求
-					acceptable := rf.appendEntriesCommonHandler(request)
-					if !acceptable {
-						rf.print(LOG_ALL, "appendentries unacceptable")
-						rf.appendEntriesHandleFinished <- true
-						continue
-					}
-					rf.print(LOG_ALL, "收到心跳包,重置选举计时器")
-
-					request.reply.Term = rf.currentTerm
-					rf.appendEntriesHandleFinished <- true
-					DPrintf("心跳包请求处理完毕")
+				case request := <-rf.reqsAERcvd:
+					rf.followerReqsAERcvd(request)
 				//收到投票
-				case request := <-rf.receiveRequestVote:
-					rf.print(LOG_ALL, "收到投票请求")
-					acceptable := rf.voteCommonRequestHandler(request)
-					if !acceptable {
-						rf.print(LOG_ALL, "unacceptable request vote")
-						rf.requestVoteHandleFinished <- true
-						continue
-					}
-
-					request.reply.Term = rf.currentTerm
-
-					//&& rf.isNewestLog(args.LastLogIndex, args.LastLogTerm ) //选举限制 5.2 5.4
-					rf.print(LOG_ALL, "votefor:%v", rf.voteFor)
-					if rf.voteFor == -1 || rf.voteFor == request.args.CandidateId {
-						rf.print(LOG_ALL, "向xx投票")
-						request.reply.VoteGranted = true
-						rf.voteFor = request.args.CandidateId
-					}
-					rf.requestVoteHandleFinished <- true
-
+				case request := <-rf.reqsRVRcvd:
+					rf.followerReqsRVRcvd(request)
 				}
 				rf.electionTimer.stop()
 			}
@@ -366,7 +360,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			rf.electionTimer.tick(ms)
 			if rf.electionTimer.reachTimeOut() {
 				DPrintf("选举计时器超时")
-				rf.startNewElection <- true
+				rf.electTimeOut <- true
 				DPrintf("触发新选举事件")
 			}
 		}
