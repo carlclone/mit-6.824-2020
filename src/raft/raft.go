@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -119,8 +120,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 
 			case ROLE_CANDIDATE:
-				rf.heartBeatTimer.stop()
-				rf.electionTimer.start()
+				//rf.heartBeatTimer.stop()
+				//rf.electionTimer.start()
 				select {
 				//处理心跳请求
 				case request := <-rf.reqsAERcvd:
@@ -129,24 +130,24 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case request := <-rf.reqsRVRcvd:
 					rf.candReqsRVHandler(request)
 				//选举超时,新一轮选举
-				case <-rf.electTimeOut:
+				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
 					rf.candElectTimeoutHandler()
 				//处理投票响应
 				case request := <-rf.respRVRcvd:
 					rf.candRespRVHandler(request)
 				}
 
-				rf.electionTimer.stop()
+				//rf.electionTimer.stop()
 
 			case ROLE_FOLLOWER:
-				rf.heartBeatTimer.stop()
-				rf.electionTimer.start()
+				//rf.heartBeatTimer.stop()
+				//rf.electionTimer.start()
 
 				rf.print(LOG_VOTE, " follower初始")
 
 				select {
 				//选举超时
-				case <-rf.electTimeOut:
+				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
 					rf.followerElectTimeoutHandler()
 				//收到心跳包
 				case request := <-rf.reqsAERcvd:
@@ -155,7 +156,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case request := <-rf.reqsRVRcvd:
 					rf.followerReqsRVHandler(request)
 				}
-				rf.electionTimer.stop()
+				//rf.electionTimer.stop()
 			}
 		}
 	}()
@@ -169,40 +170,51 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			case <-rf.concurrentSendVote:
 				rf.concurrentSendRV()
 			}
+			time.Sleep(5 * time.Millisecond)
 		}
 	}()
 
-	//选举超时定时器线程
 	go func() {
-		ms := 5
 		for {
-			time.Sleep(time.Duration(ms) * time.Millisecond)
-			rf.electionTimer.tick(ms)
-			if rf.electionTimer.reachTimeOut() {
-				DPrintf("选举计时器超时")
-				rf.electTimeOut <- true
-				DPrintf("触发新选举事件")
+			if rf.role == ROLE_LEADER {
+				rf.concurrentSendAE()
 			}
+			time.Sleep(20 * time.Millisecond)
 		}
+
 	}()
 
-	//心跳超时定时器
-	go func() {
-		ms := 5
-
-		for {
-			if rf.role != ROLE_LEADER {
-				continue
-			}
-			time.Sleep(time.Duration(ms) * time.Millisecond)
-			rf.heartBeatTimer.tick(ms)
-			if rf.heartBeatTimer.reachTimeOut() {
-				rf.concurrentSendAppendEntries <- true
-				//restart heartBeatTimer
-				rf.heartBeatTimer.start()
-			}
-		}
-	}()
+	////选举超时定时器线程
+	//go func() {
+	//	ms := 5
+	//	for {
+	//		time.Sleep(time.Duration(ms) * time.Millisecond)
+	//		rf.electionTimer.tick(ms)
+	//		if rf.electionTimer.reachTimeOut() {
+	//			DPrintf("选举计时器超时")
+	//			rf.electTimeOut <- true
+	//			DPrintf("触发新选举事件")
+	//		}
+	//	}
+	//}()
+	//
+	////心跳超时定时器
+	//go func() {
+	//	ms := 5
+	//
+	//	for {
+	//		if rf.role != ROLE_LEADER {
+	//			continue
+	//		}
+	//		time.Sleep(time.Duration(ms) * time.Millisecond)
+	//		rf.heartBeatTimer.tick(ms)
+	//		if rf.heartBeatTimer.reachTimeOut() {
+	//			rf.concurrentSendAppendEntries <- true
+	//			//restart heartBeatTimer
+	//			rf.heartBeatTimer.start()
+	//		}
+	//	}
+	//}()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
@@ -222,7 +234,7 @@ func (rf *Raft) becomeFollower(term int) {
 	rf.persist()
 	rf.voteCount = 0
 
-	rf.initChannels()
+	//rf.initChannels()
 	//rf.print(LOG_ALL, "变成 follower 角色:%v", rf.role)
 }
 
@@ -239,7 +251,7 @@ func (rf *Raft) becomeCandidate() {
 	//rf.persist()
 	rf.voteCount = 1
 
-	rf.initChannels()
+	//rf.initChannels()
 
 	rf.print(LOG_VOTE, "开始选举,任期:%v", rf.currentTerm)
 
@@ -261,7 +273,7 @@ func (rf *Raft) becomeLeader() {
 	//rf.nextIndex[i] = rf.lastLogIndex() + 1
 	//}
 
-	rf.initChannels()
+	//rf.initChannels()
 
 	//开启心跳包定时器线程
 	rf.heartBeatTimer.start()

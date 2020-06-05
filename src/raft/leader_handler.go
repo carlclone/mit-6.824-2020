@@ -17,7 +17,7 @@ func (rf *Raft) leaderRespAEHandler(request AppendEntriesRequest) {
 
 	acceptable := rf.aeCommonResponseHandler(AppendEntriesRequest{args, reply})
 	if !acceptable {
-		rf.print(LOG_ALL, "unacceptable")
+		rf.print(LOG_ALL, "leaderRespAEHandler unacceptable")
 		return
 	}
 }
@@ -27,7 +27,6 @@ func (rf *Raft) leaderReqsAEHandler(request AppendEntriesRequest) {
 	//公共处理,并判断是否继续处理该请求
 	acceptable := rf.appendEntriesCommonReqsHandler(request)
 	if !acceptable {
-		rf.print(LOG_ALL, "appendentries unacceptable")
 		rf.finishReqsAEHandle <- true
 		return
 	}
