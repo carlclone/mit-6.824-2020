@@ -197,6 +197,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.startNewElection = make(chan bool)
 	rf.someOneVoted = make(chan bool, 50)
 	rf.requestVoteHandleFinished = make(chan bool)
+	rf.appendEntriesHandleFinished = make(chan bool)
 
 	rf.concurrentSendVote = make(chan bool)
 	rf.concurrentSendAppendEntries = make(chan bool)
@@ -258,6 +259,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					acceptable := rf.appendEntriesCommonHandler(request)
 					if !acceptable {
 						rf.print(LOG_ALL, "appendentries unacceptable")
+						rf.appendEntriesHandleFinished <- true
 						continue
 					}
 					rf.print(LOG_ALL, "收到心跳包,重置选举计时器")
@@ -265,6 +267,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 					request.reply.Term = rf.currentTerm
 					rf.appendEntriesHandleFinished <- true
+					DPrintf("心跳包请求处理完毕")
 				//收到投票
 				case request := <-rf.receiveRequestVote:
 					rf.print(LOG_ALL, "收到投票请求")
@@ -342,7 +345,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 			rf.electionTimer.tick(ms)
 			if rf.electionTimer.reachTimeOut() {
+				DPrintf("选举计时器超时")
 				rf.startNewElection <- true
+				DPrintf("触发新选举事件")
 			}
 		}
 	}()
@@ -389,9 +394,7 @@ func (rf *Raft) appendEntriesCommonHandler(request AppendEntriesRequest) bool {
 	//需要更新自己的term , 如果不是follower需要回退到follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
-		if rf.role != ROLE_FOLLOWER {
-			rf.becomeFollower(args.Term)
-		}
+		rf.becomeFollower(args.Term)
 		//可以继续处理该请求
 		return true
 	}
@@ -412,9 +415,7 @@ func (rf *Raft) voteCommonRequestHandler(request VoteRequest) bool {
 	//需要更新自己的term , 如果不是follower需要回退到follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
-		if rf.role != ROLE_FOLLOWER {
-			rf.becomeFollower(args.Term)
-		}
+		rf.becomeFollower(args.Term)
 		//可以继续处理该请求
 		return true
 	}
@@ -435,9 +436,7 @@ func (rf *Raft) voteCommonResponseHandler(request VoteRequest) bool {
 	//需要更新自己的term , 如果不是follower需要回退到follower
 	if replys.Term > rf.currentTerm {
 		rf.currentTerm = replys.Term
-		if rf.role != ROLE_FOLLOWER {
-			rf.becomeFollower(replys.Term)
-		}
+		rf.becomeFollower(replys.Term)
 		return true
 	}
 
@@ -543,6 +542,7 @@ func (t *Timer) reset() {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
+	rf.print(LOG_ALL, "is leader %v", rf.role == ROLE_LEADER)
 	return rf.currentTerm, rf.role == ROLE_LEADER
 }
 
