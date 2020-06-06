@@ -199,18 +199,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		}
 	}()
 
-	go func() {
-		for {
-			switch rf.role {
-			case ROLE_LEADER:
-				rf.updateLeaderCommitStatus()
-
-			}
-			rf.tryApply()
-			time.Sleep(30 * time.Millisecond)
-		}
-	}()
-
 	return rf
 }
 

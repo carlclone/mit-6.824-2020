@@ -41,6 +41,8 @@ func (rf *Raft) leaderRespAEHandler(request AppendEntriesRequest) {
 		if reply.MatchIndex != -1 {
 			rf.print(LOG_ALL, "维护matchIndex from %v,matchIndex:%v", server, reply.MatchIndex)
 			rf.matchIndex[server] = reply.MatchIndex
+			rf.updateLeaderCommitStatus()
+			rf.tryApply()
 		}
 	}
 

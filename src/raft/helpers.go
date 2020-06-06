@@ -37,7 +37,7 @@ func (rf *Raft) updateLeaderCommitStatus() {
 
 func (rf *Raft) tryApply() {
 
-	if rf.commitIndex > rf.lastApplied {
+	for rf.commitIndex > rf.lastApplied {
 		rf.print(LOG_PERSIST, "apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, rf.log)
 		rf.lastApplied++
 		log := rf.log[rf.lastApplied]

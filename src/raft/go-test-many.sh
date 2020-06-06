@@ -65,7 +65,7 @@ if [ $# -gt 1 ]; then
 fi
 
 # Default to no test filtering unless otherwise specified
-test="TestBasicAgree2B"
+test=""
 if [ $# -gt 2 ]; then
 	test="$3"
 fi
