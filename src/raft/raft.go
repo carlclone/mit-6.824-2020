@@ -32,7 +32,6 @@ import "labrpc"
 //
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
-	mu2       sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
@@ -72,8 +71,7 @@ type Raft struct {
 	concurrentSendVote          chan bool
 	concurrentSendAppendEntries chan bool
 
-	someOneVoted chan bool
-	applyCh      chan ApplyMsg
+	applyCh chan ApplyMsg
 
 	resetTimer chan bool
 }
@@ -118,9 +116,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				switch rf.role {
 				case ROLE_LEADER:
 				case ROLE_CANDIDATE:
+					rf.mu.Lock()
 					rf.candElectTimeoutHandler()
+					rf.mu.Unlock()
 				case ROLE_FOLLOWER:
+					rf.mu.Lock()
 					rf.followerElectTimeoutHandler()
+					rf.mu.Unlock()
 				}
 			case <-rf.resetTimer:
 			}
@@ -132,6 +134,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		for {
 			select {
 			case request := <-rf.reqsAERcvd:
+				rf.mu.Lock()
 				switch rf.role {
 				case ROLE_LEADER:
 					rf.leaderReqsAEHandler(request)
@@ -142,8 +145,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.resetTimer <- true
 					rf.followerReqsAEHandler(request)
 				}
+				rf.mu.Unlock()
 
 			case request := <-rf.reqsRVRcvd:
+				rf.mu.Lock()
 				rf.print(LOG_ALL, "收到投票请求")
 				switch rf.role {
 				case ROLE_LEADER:
@@ -156,14 +161,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.resetTimer <- true
 					rf.followerReqsRVHandler(request)
 				}
+				rf.mu.Unlock()
 			case request := <-rf.respAERcvd:
+				rf.mu.Lock()
 				switch rf.role {
 				case ROLE_LEADER:
 					rf.leaderRespAEHandler(request)
 				case ROLE_CANDIDATE:
 				case ROLE_FOLLOWER:
 				}
+				rf.mu.Unlock()
 			case request := <-rf.respRVRcvd:
+				rf.mu.Lock()
 				rf.print(LOG_ALL, "收到投票响应")
 				switch rf.role {
 				case ROLE_LEADER:
@@ -172,22 +181,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.candRespRVHandler(request)
 				case ROLE_FOLLOWER:
 				}
+				rf.mu.Unlock()
 			}
 		}
 	}()
-
-	//并发发送网络请求线程 leader发送心跳包 , candidate请求投票 , follower不发送任何请求
-	//go func() {
-	//	for {
-	//		select {
-	//		case <-rf.concurrentSendAppendEntries:
-	//			rf.concurrentSendAE()
-	//		case <-rf.concurrentSendVote:
-	//			rf.concurrentSendRV()
-	//		}
-	//		time.Sleep(5 * time.Millisecond)
-	//	}
-	//}()
 
 	//心跳定时器线程
 	go func() {
@@ -225,11 +222,11 @@ func (rf *Raft) becomeCandidate() {
 
 	rf.currentTerm++
 	rf.voteFor = rf.me
-	rf.persist()
 	rf.voteCount = 1
 
 	//rf.initChannels()
 	rf.role = ROLE_CANDIDATE
+	rf.persist()
 	rf.concurrentSendRV()
 
 	//群发投票请求
@@ -259,7 +256,6 @@ func (rf *Raft) becomeLeader() {
 
 func (rf *Raft) initChannels() {
 	rf.electTimeOut = make(chan bool, 50)
-	rf.someOneVoted = make(chan bool, 50)
 
 	rf.concurrentSendVote = make(chan bool, 50)
 	rf.concurrentSendAppendEntries = make(chan bool, 50)

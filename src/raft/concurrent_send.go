@@ -11,6 +11,7 @@ func (rf *Raft) concurrentSendAE() {
 					LeaderId: rf.me,
 				}
 
+				rf.mu.Lock()
 				args.LeaderCommitIndex = rf.commitIndex
 				args.Entries = rf.serverNextEntriesToReplica(i)
 
@@ -23,6 +24,7 @@ func (rf *Raft) concurrentSendAE() {
 					args.PrevLogIndex = rf.log[prevIndex].Index
 					args.PrevLogTerm = rf.log[prevIndex].Term
 				}
+				rf.mu.Unlock()
 				reply := &AppendEntriesReply{}
 				rf.sendAppendEntries(i, args, reply)
 			}(i)

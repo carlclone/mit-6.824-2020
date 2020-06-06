@@ -47,8 +47,6 @@ func (rf *Raft) tryApply() {
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.mu2.Lock()
-	defer rf.mu2.Unlock()
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
 		rf.becomeFollower(args.Term)
 		reply.Term = args.Term
@@ -66,8 +64,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	rf.mu2.Lock()
-	defer rf.mu2.Unlock()
 
 	rf.print(LOG_ALL, "收到心跳包")
 
