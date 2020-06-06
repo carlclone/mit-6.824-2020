@@ -195,7 +195,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			if rf.role == ROLE_LEADER {
 				rf.concurrentSendAE()
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}()
 
