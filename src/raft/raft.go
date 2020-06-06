@@ -113,7 +113,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 
 			case ROLE_CANDIDATE:
+				rf.mu.Lock()
 				rf.becomeCandidate()
+				rf.mu.Unlock()
 				select {
 				case <-rf.receiveAppendEntries:
 				case <-time.After(time.Duration((rand.Int63())%500+200) * time.Millisecond):
