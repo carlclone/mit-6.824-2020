@@ -392,32 +392,45 @@ func TestRejoin2B(t *testing.T) {
 	cfg.begin("Test (2B): rejoin of partitioned leader")
 	//0  2  1
 	cfg.one(101, servers, true)
+	DPrintf("提交了 101")
 
 	// leader network failure
 	leader1 := cfg.checkOneLeader()
+
+	DPrintf("提交了leader %v", leader1)
 	cfg.disconnect(leader1)
+	DPrintf("断开了 leader%v", leader1)
 
 	// make old leader try to agree on some entries
+	DPrintf("在 leader%v 提交 102 103 104", leader1)
 	cfg.rafts[leader1].Start(102)
 	cfg.rafts[leader1].Start(103)
 	cfg.rafts[leader1].Start(104)
+	DPrintf("在 leader%v 提交了 102 103 104", leader1)
 
 	// new leader commits, also for index=2
 	cfg.one(103, 2, true)
+	DPrintf("在新 leader index=2 提交了 103 , leader1 index2是 102")
 
 	// new leader network failure
 	leader2 := cfg.checkOneLeader()
+	DPrintf("新 leader%v", leader2)
 	cfg.disconnect(leader2)
+	DPrintf("断开 leader%v", leader2)
 
 	// old leader connected again
 	cfg.connect(leader1)
+	DPrintf("重连 leader%v", leader1)
 
 	cfg.one(104, 2, true)
+	DPrintf("提交 104")
 
 	// all together now
 	cfg.connect(leader2)
+	DPrintf("重连 leader%v", leader2)
 
 	cfg.one(105, servers, true)
+	DPrintf("提交 105")
 
 	cfg.end()
 }

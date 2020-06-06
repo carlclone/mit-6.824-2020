@@ -110,19 +110,24 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			switch rf.role {
 
 			case ROLE_LEADER:
-				rf.mu.Lock() //和start互斥
 				select {
+				//不能在 select 加锁,leader 可能断开了收不到任何请求和响应,但此时可以 start
 				//处理心跳请求
 				case request := <-rf.reqsAERcvd:
+					rf.mu.Lock() //和start互斥
 					rf.leaderReqsAEHandler(request)
+					rf.mu.Unlock()
 				//处理投票请求
 				case request := <-rf.reqsRVRcvd:
+					rf.mu.Lock() //和start互斥
 					rf.leaderReqsRVHandler(request)
+					rf.mu.Unlock()
 				//处理心跳响应
 				case request := <-rf.respAERcvd:
+					rf.mu.Lock() //和start互斥
 					rf.leaderRespAEHandler(request)
+					rf.mu.Unlock()
 				}
-				rf.mu.Unlock()
 
 			case ROLE_CANDIDATE:
 				//rf.heartBeatTimer.stop()
@@ -135,7 +140,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				case request := <-rf.reqsRVRcvd:
 					rf.candReqsRVHandler(request)
 				//选举超时,新一轮选举
-				case <-time.After(time.Duration((rand.Int63())%500+300) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%150+150) * time.Millisecond):
 					rf.candElectTimeoutHandler()
 				//处理投票响应
 				case request := <-rf.respRVRcvd:
@@ -150,7 +155,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 				select {
 				//选举超时
-				case <-time.After(time.Duration((rand.Int63())%500+300) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%150+150) * time.Millisecond):
 					rf.followerElectTimeoutHandler()
 				//收到心跳包
 				case request := <-rf.reqsAERcvd:
@@ -187,37 +192,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	}()
 
-	////选举超时定时器线程
-	//go func() {
-	//	ms := 5
-	//	for {
-	//		time.Sleep(time.Duration(ms) * time.Millisecond)
-	//		rf.electionTimer.tick(ms)
-	//		if rf.electionTimer.reachTimeOut() {
-	//			DPrintf("选举计时器超时")
-	//			rf.electTimeOut <- true
-	//			DPrintf("触发新选举事件")
-	//		}
-	//	}
-	//}()
-	//
-	////心跳超时定时器
-	//go func() {
-	//	ms := 5
-	//
-	//	for {
-	//		if rf.role != ROLE_LEADER {
-	//			continue
-	//		}
-	//		time.Sleep(time.Duration(ms) * time.Millisecond)
-	//		rf.heartBeatTimer.tick(ms)
-	//		if rf.heartBeatTimer.reachTimeOut() {
-	//			rf.concurrentSendAppendEntries <- true
-	//			//restart heartBeatTimer
-	//			rf.heartBeatTimer.start()
-	//		}
-	//	}
-	//}()
+	go func() {
+		for {
+			switch rf.role {
+			case ROLE_LEADER:
+				rf.updateLeaderCommitStatus()
+
+			}
+			rf.tryApply()
+			time.Sleep(30 * time.Millisecond)
+		}
+	}()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())

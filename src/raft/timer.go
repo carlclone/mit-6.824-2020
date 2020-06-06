@@ -45,3 +45,35 @@ func (t *Timer) stop() {
 func (t *Timer) reset() {
 	t.timePassMs = 0
 }
+
+////选举超时定时器线程
+//go func() {
+//	ms := 5
+//	for {
+//		time.Sleep(time.Duration(ms) * time.Millisecond)
+//		rf.electionTimer.tick(ms)
+//		if rf.electionTimer.reachTimeOut() {
+//			DPrintf("选举计时器超时")
+//			rf.electTimeOut <- true
+//			DPrintf("触发新选举事件")
+//		}
+//	}
+//}()
+//
+////心跳超时定时器
+//go func() {
+//	ms := 5
+//
+//	for {
+//		if rf.role != ROLE_LEADER {
+//			continue
+//		}
+//		time.Sleep(time.Duration(ms) * time.Millisecond)
+//		rf.heartBeatTimer.tick(ms)
+//		if rf.heartBeatTimer.reachTimeOut() {
+//			rf.concurrentSendAppendEntries <- true
+//			//restart heartBeatTimer
+//			rf.heartBeatTimer.start()
+//		}
+//	}
+//}()

@@ -31,13 +31,13 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 		rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
 	} else {
 
-		//if args.PrevLogIndex <= len(rf.log)-1 {
-		//	//2C的优化实现
-		//	rf.print(LOG_ALL,"2C优化实现")
-		//	prevlog := rf.log[args.PrevLogIndex]
-		//	reply.ConflictTerm = prevlog.Term
-		//	reply.ConflictIndex = rf.findFirstIndexOfTerm(prevlog.Term)
-		//}
+		if args.PrevLogIndex <= len(rf.log)-1 {
+			//2C的优化实现
+			rf.print(LOG_ALL, "2C优化实现")
+			prevlog := rf.log[args.PrevLogIndex]
+			reply.ConflictTerm = prevlog.Term
+			reply.ConflictIndex = rf.findFirstIndexOfTerm(prevlog.Term)
+		}
 		rf.print(LOG_ALL, "LOG不一致，回退一个")
 		reply.NextIndex = args.PrevLogIndex
 		reply.MatchIndex = -1
@@ -118,7 +118,6 @@ func (rf *Raft) updateFollowerCommitIndex(leaderCommitIndex int) {
 			rf.commitIndex = leaderCommitIndex
 		}
 		rf.print(LOG_PERSIST, "更新commitIndex:%v", rf.commitIndex)
-		rf.tryApply()
 	}
 
 }

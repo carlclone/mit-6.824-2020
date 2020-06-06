@@ -1,8 +1,8 @@
 package raft
 
 import (
+	"fmt"
 	"log"
-	"strconv"
 )
 
 // Debugging
@@ -45,6 +45,6 @@ func (rf *Raft) print(level int, format string, a ...interface{}) {
 
 	m2 := []string{"leader", "candidate", "follower"}
 
-	format = "SERVER#" + strconv.Itoa(rf.me) + " ROLE#" + m2[rf.role-1] + " TERM#" + strconv.Itoa(rf.currentTerm) + " -" + format
+	format = fmt.Sprintf("SERVER#%v ROLE#%v TERM#%v - %v", rf.me, m2[rf.role-1], rf.currentTerm, format)
 	DPrintf(format, a...)
 }

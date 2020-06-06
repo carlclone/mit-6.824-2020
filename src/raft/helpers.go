@@ -26,14 +26,9 @@ func (rf *Raft) updateLeaderCommitStatus() {
 			}
 		}
 
-		//if len(rf.log)-1 >= N {
-		//	rf.print(LOG_LEADER, "更新 leader 的 commitIndex , matchIndex:%v commitIndex%v term:%v currT:%v", rf.matchIndex, rf.commitIndex, rf.log[N].Term, rf.currentTerm)
-		//}
-
 		if rf.isMajority(num) && rf.log[N].Term == rf.currentTerm {
 			rf.print(LOG_PERSIST, "更新commitIndex:", rf.log)
 			rf.commitIndex = N
-			rf.tryApply()
 		}
 		N++
 	}
