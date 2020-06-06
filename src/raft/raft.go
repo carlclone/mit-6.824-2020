@@ -74,6 +74,8 @@ type Raft struct {
 
 	someOneVoted chan bool
 	applyCh      chan ApplyMsg
+
+	resetTimer chan bool
 }
 
 // Make() must return quickly, so it should start goroutines for any long-running work.
@@ -105,74 +107,71 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	/*
 	 * 事件流向 : 定时器线程,请求,响应产生事件,  主事件线程接收 ,处理 , 如果有需要并发的(网络请求),分配并发事件到并发线程
 	 */
+
+	/*
+	 * Timer 线程
+	 */
+	go func() {
+		for {
+			select {
+			case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
+				switch rf.role {
+				case ROLE_LEADER:
+				case ROLE_CANDIDATE:
+					rf.candElectTimeoutHandler()
+				case ROLE_FOLLOWER:
+					rf.followerElectTimeoutHandler()
+				}
+			case <-rf.resetTimer:
+			}
+		}
+	}()
+
 	//主事件循环线程
 	go func() {
 		for {
-			switch rf.role {
-
-			case ROLE_LEADER:
-				rf.print(LOG_ALL, "leader 初始")
-				select {
-				//不能在 select 加锁,leader 可能断开了收不到任何请求和响应,但此时可以 start
-				//处理心跳请求
-				case request := <-rf.reqsAERcvd:
-					rf.mu.Lock() //和start互斥
+			select {
+			case request := <-rf.reqsAERcvd:
+				switch rf.role {
+				case ROLE_LEADER:
 					rf.leaderReqsAEHandler(request)
-					rf.mu.Unlock()
-				//处理投票请求
-				case request := <-rf.reqsRVRcvd:
-					rf.mu.Lock() //和start互斥
-					rf.leaderReqsRVHandler(request)
-					rf.mu.Unlock()
-				//处理心跳响应
-				case request := <-rf.respAERcvd:
-					rf.mu.Lock() //和start互斥
-					rf.leaderRespAEHandler(request)
-					rf.mu.Unlock()
-				}
-
-			case ROLE_CANDIDATE:
-				rf.print(LOG_ALL, "candidate 初始")
-				//rf.heartBeatTimer.stop()
-				//rf.electionTimer.start()
-				select {
-				//处理心跳请求
-				case request := <-rf.reqsAERcvd:
+				case ROLE_CANDIDATE:
 					rf.print(LOG_ALL, "CC1")
 					rf.candReqsAEHandler(request)
-				//处理投票请求
-				case request := <-rf.reqsRVRcvd:
+				case ROLE_FOLLOWER:
+					rf.resetTimer <- true
+					rf.followerReqsAEHandler(request)
+				}
+
+			case request := <-rf.reqsRVRcvd:
+				rf.print(LOG_ALL, "收到投票请求")
+				switch rf.role {
+				case ROLE_LEADER:
+					rf.leaderReqsRVHandler(request)
+				case ROLE_CANDIDATE:
 					rf.print(LOG_ALL, "CC2")
 					rf.candReqsRVHandler(request)
-				//选举超时,新一轮选举
-				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
-					rf.print(LOG_ALL, "CC3")
-					rf.candElectTimeoutHandler()
-				//处理投票响应
-				case request := <-rf.respRVRcvd:
-					rf.print(LOG_ALL, "CC4")
-					rf.candRespRVHandler(request)
-				}
-
-				//rf.electionTimer.stop()
-
-			case ROLE_FOLLOWER:
-				//rf.heartBeatTimer.stop()
-				//rf.electionTimer.start()
-				rf.print(LOG_ALL, "FOLLOWER 初始")
-
-				select {
-				//选举超时
-				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
-					rf.followerElectTimeoutHandler()
-				//收到心跳包
-				case request := <-rf.reqsAERcvd:
-					rf.followerReqsAEHandler(request)
-				//收到投票
-				case request := <-rf.reqsRVRcvd:
+				case ROLE_FOLLOWER:
+					rf.print(LOG_ALL, "follower 开始处理投票请求")
+					rf.resetTimer <- true
 					rf.followerReqsRVHandler(request)
 				}
-				//rf.electionTimer.stop()
+			case request := <-rf.respAERcvd:
+				switch rf.role {
+				case ROLE_LEADER:
+					rf.leaderRespAEHandler(request)
+				case ROLE_CANDIDATE:
+				case ROLE_FOLLOWER:
+				}
+			case request := <-rf.respRVRcvd:
+				rf.print(LOG_ALL, "收到投票响应")
+				switch rf.role {
+				case ROLE_LEADER:
+				case ROLE_CANDIDATE:
+					rf.print(LOG_ALL, "CC4")
+					rf.candRespRVHandler(request)
+				case ROLE_FOLLOWER:
+				}
 			}
 		}
 	}()
@@ -190,6 +189,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//	}
 	//}()
 
+	//心跳定时器线程
 	go func() {
 		for {
 			if rf.role == ROLE_LEADER {
@@ -197,7 +197,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
-
 	}()
 
 	go func() {
@@ -230,11 +229,11 @@ func (rf *Raft) becomeFollower(term int) {
 }
 
 func (rf *Raft) becomeCandidate() {
-	//if rf.role == ROLE_CANDIDATE {
-	//	rf.print(LOG_ALL, "newCandidateRound")
-	//} else {
-	//	rf.print(LOG_ALL, "becomeCandidate")
-	//}
+	if rf.role == ROLE_CANDIDATE {
+		rf.print(LOG_ALL, "newCandidateRound")
+	} else {
+		rf.print(LOG_ALL, "becomeCandidate")
+	}
 
 	rf.currentTerm++
 	rf.voteFor = rf.me
@@ -277,12 +276,14 @@ func (rf *Raft) initChannels() {
 	rf.concurrentSendVote = make(chan bool, 50)
 	rf.concurrentSendAppendEntries = make(chan bool, 50)
 
-	rf.finishReqsRVHandle = make(chan bool) //需要缓冲 channel , 否则leader会发生阻塞
-	rf.finishReqsAEHandle = make(chan bool)
+	rf.finishReqsRVHandle = make(chan bool, 50) //需要缓冲 channel , 否则leader会发生阻塞
+	rf.finishReqsAEHandle = make(chan bool, 50)
 
 	rf.reqsRVRcvd = make(chan VoteRequest, 50)
 	rf.reqsAERcvd = make(chan AppendEntriesRequest, 50)
 
 	rf.respRVRcvd = make(chan VoteRequest, 50)
 	rf.respAERcvd = make(chan AppendEntriesRequest, 50)
+
+	rf.resetTimer = make(chan bool, 50)
 }
