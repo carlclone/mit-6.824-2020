@@ -47,9 +47,11 @@ func (rf *Raft) tryApply() {
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.mu2.Lock()
+	defer rf.mu2.Unlock()
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
 		rf.becomeFollower(args.Term)
-		reply.Term = rf.currentTerm
+		reply.Term = args.Term
 	}
 
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
@@ -64,10 +66,14 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.mu2.Lock()
+	defer rf.mu2.Unlock()
+
+	rf.print(LOG_ALL, "收到心跳包")
 
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
 		rf.becomeFollower(args.Term)
-		reply.Term = rf.currentTerm
+		reply.Term = args.Term
 	}
 
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
@@ -88,7 +94,9 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 			rf.becomeFollower(reply.Term)
 		}
 
-		rf.respRVRcvd <- VoteRequest{args, reply}
+		if reply.VoteGranted {
+			rf.respRVRcvd <- VoteRequest{args, reply}
+		}
 	}
 	return ok
 }

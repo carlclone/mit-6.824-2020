@@ -1,11 +1,13 @@
 package raft
 
 func (rf *Raft) followerElectTimeoutHandler() {
+	rf.print(LOG_ALL, "follower 选举超时")
 	//to candidate
 	rf.becomeCandidate()
 }
 
 func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
+	rf.print(LOG_ALL, "follower 开始处理心跳")
 
 	reply := request.reply
 	args := request.args
@@ -51,6 +53,8 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 
 func (rf *Raft) followerReqsRVHandler(request VoteRequest) {
 
+	rf.print(LOG_ALL, "收到投票请求")
+
 	//follower 判断是否向其投票
 	args := request.args
 	request.reply.From = rf.me
@@ -59,6 +63,7 @@ func (rf *Raft) followerReqsRVHandler(request VoteRequest) {
 		rf.print(LOG_ALL, "向%v投票", args.CandidateId)
 		request.reply.VoteGranted = true
 		rf.voteFor = request.args.CandidateId
+		rf.persist()
 	}
 	rf.finishReqsRVHandle <- true
 

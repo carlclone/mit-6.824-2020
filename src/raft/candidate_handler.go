@@ -24,5 +24,6 @@ func (rf *Raft) candReqsRVHandler(request VoteRequest) {
 
 //cand收到心跳 , 只需要按照公共处理
 func (rf *Raft) candReqsAEHandler(request AppendEntriesRequest) {
+	rf.becomeFollower(request.args.Term)
 	rf.finishReqsAEHandle <- true
 }

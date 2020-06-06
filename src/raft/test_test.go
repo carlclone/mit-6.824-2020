@@ -671,16 +671,23 @@ func TestPersist22C(t *testing.T) {
 	cfg.begin("Test (2C): more persistence")
 
 	index := 1
+	DPrintf("执行 4 个 start ")
 	for iters := 0; iters < 5; iters++ {
 		cfg.one(10+index, servers, true)
 		index++
 
 		leader1 := cfg.checkOneLeader()
+		DPrintf("存在 leader %v", leader1)
 
-		cfg.disconnect((leader1 + 1) % servers)
-		cfg.disconnect((leader1 + 2) % servers)
+		t1 := (leader1 + 1) % servers
+		cfg.disconnect(t1)
+		DPrintf("断开%v", t1)
+		t2 := (leader1 + 2) % servers
+		cfg.disconnect(t2)
+		DPrintf("断开%v", t2)
 
 		cfg.one(10+index, servers-2, true)
+		DPrintf("start %v , expectServ %v , retry %v", 10+index, servers-2, true)
 		index++
 
 		cfg.disconnect((leader1 + 0) % servers)
@@ -704,6 +711,7 @@ func TestPersist22C(t *testing.T) {
 		cfg.connect((leader1 + 0) % servers)
 	}
 
+	DPrintf("start1000")
 	cfg.one(1000, servers, true)
 
 	cfg.end()

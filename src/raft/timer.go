@@ -77,3 +77,8 @@ func (t *Timer) reset() {
 //		}
 //	}
 //}()
+
+//rf.electionTimer = Timer{stopped: true, timeoutMsGenerator: rf.electionTimeOut}
+//rf.heartBeatTimer = Timer{stopped: true, timeoutMsGenerator: func() int {
+//return 20
+//}}

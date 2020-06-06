@@ -32,6 +32,7 @@ import "labrpc"
 //
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
+	mu2       sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
@@ -88,13 +89,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.log = append(rf.log, Entry{}) //设置dummyHead
 	rf.applyCh = applyCh
 
-	rf.electionTimer = Timer{stopped: true, timeoutMsGenerator: rf.electionTimeOut}
-	rf.heartBeatTimer = Timer{stopped: true, timeoutMsGenerator: func() int {
-		return 20
-	}}
-
 	//channels
 	rf.initChannels()
+
+	// initialize from state persisted before a crash
+	rf.readPersist(persister.ReadRaftState())
+
+	rf.print(LOG_ALL, "创建了%v", rf.me)
 
 	/*
 	 * 可以并发 : 群发投票请求 , 群发心跳包
@@ -110,6 +111,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			switch rf.role {
 
 			case ROLE_LEADER:
+				rf.print(LOG_ALL, "leader 初始")
 				select {
 				//不能在 select 加锁,leader 可能断开了收不到任何请求和响应,但此时可以 start
 				//处理心跳请求
@@ -130,20 +132,25 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 
 			case ROLE_CANDIDATE:
+				rf.print(LOG_ALL, "candidate 初始")
 				//rf.heartBeatTimer.stop()
 				//rf.electionTimer.start()
 				select {
 				//处理心跳请求
 				case request := <-rf.reqsAERcvd:
+					rf.print(LOG_ALL, "CC1")
 					rf.candReqsAEHandler(request)
 				//处理投票请求
 				case request := <-rf.reqsRVRcvd:
+					rf.print(LOG_ALL, "CC2")
 					rf.candReqsRVHandler(request)
 				//选举超时,新一轮选举
-				case <-time.After(time.Duration((rand.Int63())%150+150) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
+					rf.print(LOG_ALL, "CC3")
 					rf.candElectTimeoutHandler()
 				//处理投票响应
 				case request := <-rf.respRVRcvd:
+					rf.print(LOG_ALL, "CC4")
 					rf.candRespRVHandler(request)
 				}
 
@@ -152,10 +159,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			case ROLE_FOLLOWER:
 				//rf.heartBeatTimer.stop()
 				//rf.electionTimer.start()
+				rf.print(LOG_ALL, "FOLLOWER 初始")
 
 				select {
 				//选举超时
-				case <-time.After(time.Duration((rand.Int63())%150+150) * time.Millisecond):
+				case <-time.After(time.Duration((rand.Int63())%300+150) * time.Millisecond):
 					rf.followerElectTimeoutHandler()
 				//收到心跳包
 				case request := <-rf.reqsAERcvd:
@@ -187,7 +195,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			if rf.role == ROLE_LEADER {
 				rf.concurrentSendAE()
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 		}
 
 	}()
@@ -204,18 +212,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		}
 	}()
 
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
-
 	return rf
 }
 
 // become的同时要重置/初始化角色相关属性 ,channel
 func (rf *Raft) becomeFollower(term int) {
 	rf.print(LOG_ALL, "becomeFollower")
-	if rf.role == ROLE_LEADER {
-		rf.heartBeatTimer.stop()
-	}
 	rf.role = ROLE_FOLLOWER
 	rf.voteFor = -1
 	rf.currentTerm = term
@@ -228,28 +230,27 @@ func (rf *Raft) becomeFollower(term int) {
 }
 
 func (rf *Raft) becomeCandidate() {
-	if rf.role == ROLE_CANDIDATE {
-		rf.print(LOG_ALL, "newCandidateRound")
-	} else {
-		rf.print(LOG_ALL, "becomeCandidate")
-	}
+	//if rf.role == ROLE_CANDIDATE {
+	//	rf.print(LOG_ALL, "newCandidateRound")
+	//} else {
+	//	rf.print(LOG_ALL, "becomeCandidate")
+	//}
 
-	rf.role = ROLE_CANDIDATE
 	rf.currentTerm++
 	rf.voteFor = rf.me
-	//rf.persist()
+	rf.persist()
 	rf.voteCount = 1
 
-	rf.initChannels()
+	//rf.initChannels()
+	rf.role = ROLE_CANDIDATE
+	rf.concurrentSendRV()
 
 	//群发投票请求
 	//rf.concurrentSendVote <- true
-	rf.concurrentSendRV()
 }
 
 func (rf *Raft) becomeLeader() {
 	rf.print(LOG_ALL, "becomeLeader")
-	rf.role = ROLE_LEADER
 	rf.voteFor = -1
 	rf.persist()
 	rf.voteCount = 0
@@ -262,6 +263,7 @@ func (rf *Raft) becomeLeader() {
 	}
 
 	rf.initChannels()
+	rf.role = ROLE_LEADER
 
 	//开启心跳包定时器线程
 	//rf.heartBeatTimer.start()
@@ -275,7 +277,7 @@ func (rf *Raft) initChannels() {
 	rf.concurrentSendVote = make(chan bool, 50)
 	rf.concurrentSendAppendEntries = make(chan bool, 50)
 
-	rf.finishReqsRVHandle = make(chan bool)
+	rf.finishReqsRVHandle = make(chan bool) //需要缓冲 channel , 否则leader会发生阻塞
 	rf.finishReqsAEHandle = make(chan bool)
 
 	rf.reqsRVRcvd = make(chan VoteRequest, 50)
