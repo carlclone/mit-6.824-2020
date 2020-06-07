@@ -6,7 +6,7 @@ import (
 )
 
 // Debugging
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -23,6 +23,7 @@ const (
 	LOG_PERSIST   = 4
 
 	LOG_LEADER = 10
+	LOG_UN8    = 11
 )
 
 func (rf *Raft) print(level int, format string, a ...interface{}) {
@@ -32,16 +33,17 @@ func (rf *Raft) print(level int, format string, a ...interface{}) {
 	//level != LOG_PERSIST {
 	//	return
 	//}
-	//m := map[int]bool{
-	//	LOG_ALL:       true,
-	//	LOG_VOTE:      true,
-	//	LOG_HEARTBEAT: true,
-	//	LOG_REPLICA_1: true,
-	//	LOG_PERSIST:   false,
-	//}
-	//if !m[level] {
-	//	return
-	//}
+	m := map[int]bool{
+		//LOG_ALL:       true,
+		//LOG_VOTE:      true,
+		//LOG_HEARTBEAT: true,
+		//LOG_REPLICA_1: true,
+		LOG_PERSIST: false,
+		LOG_UN8:     true,
+	}
+	if !m[level] {
+		return
+	}
 
 	m2 := []string{"leader", "candidate", "follower"}
 

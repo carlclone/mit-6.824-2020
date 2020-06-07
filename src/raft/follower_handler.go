@@ -33,15 +33,13 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 		rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
 		rf.tryApply()
 	} else {
-
+		reply.ConflictTerm = args.PrevLogTerm
 		if args.PrevLogIndex <= len(rf.log)-1 {
 			//2C的优化实现
-			rf.print(LOG_ALL, "2C优化实现")
-			prevlog := rf.log[args.PrevLogIndex]
-			reply.ConflictTerm = prevlog.Term
-			reply.ConflictIndex = rf.findFirstIndexOfTerm(prevlog.Term)
+			reply.ConflictIndex = rf.findFirstIndexOfTerm(args.PrevLogTerm)
+			rf.print(LOG_UN8, "2C优化实现 conflictTerm %v conflictIndex %v", reply.ConflictTerm, reply.ConflictIndex)
 		}
-		rf.print(LOG_ALL, "LOG不一致，回退一个")
+		//rf.print(LOG_ALL, "LOG不一致，回退一个")
 		reply.NextIndex = args.PrevLogIndex
 		reply.MatchIndex = -1
 		reply.Success = true

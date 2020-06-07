@@ -17,25 +17,25 @@ func (rf *Raft) leaderRespAEHandler(request AppendEntriesRequest) {
 	server := reply.From
 
 	if reply.NeedMaintainIndex {
-		rf.print(LOG_REPLICA_1, "维护 nextIndex 和 MatchIndex server:%v nextIndex %v matchIndex %v", server, reply.NextIndex, reply.MatchIndex)
+		//rf.print(LOG_REPLICA_1, "维护 nextIndex 和 MatchIndex server:%v nextIndex %v matchIndex %v", server, reply.NextIndex, reply.MatchIndex)
 
 		//2C优化
 		// leader要做的事 :   从后往前找到term=conflictTerm的log , 如果找到了 , 要设置nextIndex = 该log的index
 		//如果没找到 , nextIndex=conflictIndex
 		if reply.ConflictTerm != -1 {
-			logLen := len(rf.log)
-			rf.print(LOG_ALL, "conflict,conflictIndex %v", reply.ConflictIndex)
+			if reply.ConflictIndex == -1 {
+				reply.ConflictIndex = rf.findFirstIndexOfTerm(reply.ConflictTerm)
+			}
+
+			//logLen := len(rf.log)
+			rf.print(LOG_UN8, "conflict, conflictTerm %v ,conflictIndex %v", reply.ConflictTerm, reply.ConflictIndex)
 
 			rf.nextIndex[server] = reply.ConflictIndex
-
-			for i := logLen - 1; i >= 0; i-- {
-				if rf.log[i].Term == reply.ConflictTerm {
-					rf.nextIndex[server] = rf.log[i].Index
-				}
-			}
+			rf.print(LOG_UN8, "维护fast backup nextIndex %v", rf.nextIndex[server])
 
 		} else {
 			rf.nextIndex[server] = reply.NextIndex
+			rf.print(LOG_UN8, "一个一个退 %v", rf.nextIndex[server])
 		}
 
 		if reply.MatchIndex != -1 {

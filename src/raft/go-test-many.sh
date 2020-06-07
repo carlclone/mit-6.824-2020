@@ -65,7 +65,7 @@ if [ $# -gt 1 ]; then
 fi
 
 # Default to no test filtering unless otherwise specified
-test=""
+test="TestFigure8Unreliable2C"
 if [ $# -gt 2 ]; then
 	test="$3"
 fi
