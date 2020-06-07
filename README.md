@@ -41,6 +41,18 @@ All labs and assignment for the course
 ---
 
 
+### Lab2
+
+2020/06/04 ~ 2020/06/07
+
+为了解决TestFigure8Unreliable2C跑 100 次不能稳定通过,以至于不敢做 lab3,隔了一个月的时间,开始了 lab2 第三次重写,用回了第一次写时候的思路,event-driven,只不过这次把需要并发和不能并发的逻辑理清楚了,每个 peer 有 3 个线程,一个选举超时线程,一个心跳线程,一个主事件线程(主要是心跳,投票请求和响应的处理)
+
+说一下需要并发的逻辑: 群发心跳包,群发选票 , 但是发送之前的参数准备是不能并发的,需要加锁(和主事件线程互斥)
+
+然后是TestFigure8Unreliable2C这个 case, 必须优化日志复制的逻辑,否则跑 100 次的通过率会很低,有 commited 超时限制 ,  需要实现 fast backup (快速回退): 当 follower 发现 prevLogTerm 不一致的时候,会在本机的 log 中找到该 term 第一个 log 的 index, 发给 leader . 如果没有 , 那么 leader会把该 follower 的 nextIndex 置为 leader 的 log 中该 term 的第一个 index , 实现快速回退一个任期的 log , 而不是一个一个回退
+
+
+
 ### FailAgree 和 FailNoAgree 的场景
 
 摘抄自https://pdos.csail.mit.edu/6.824/notes/l-raft2.txt
