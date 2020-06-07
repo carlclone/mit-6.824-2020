@@ -1,10 +1,10 @@
 package kvraft
 
 import (
-	"../labgob"
-	"../labrpc"
+	"labgob"
+	"labrpc"
 	"log"
-	"../raft"
+	"raft"
 	"sync"
 	"sync/atomic"
 )
@@ -18,11 +18,13 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	OpName string
+	OpKey  string
+	OpVal  string
 }
 
 type KVServer struct {
@@ -35,15 +37,92 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	kvPairs map[string]string
 }
 
-
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	key := args.Key
+
+	if _, ok := kv.kvPairs[key]; !ok {
+		reply.Err = ErrNoKey
+		return
+	}
+
+	op := Op{}
+	op.OpName = "Get"
+	op.OpKey = key
+	kv.rf.Start(op)
+	msg := <-kv.applyCh
+
+	if msg.CommandValid {
+		reply.Err = OK
+		reply.Value = kv.kvPairs[key]
+		return
+	}
+
+	reply.Err = ErrWrongLeader
+	return
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	key := args.Key
+	val := args.Value
+
+	op := Op{}
+	op.OpName = "PutAppend"
+	op.OpKey = key
+	op.OpVal = val
+	kv.rf.Start(op)
+	msg := <-kv.applyCh
+
+	if msg.CommandValid {
+		kv.kvPairs[key] = val
+		reply.Err = OK
+		return
+	}
+
+	reply.Err = ErrWrongLeader
+	return
+}
+
+//
+// servers[] contains the ports of the set of
+// servers that will cooperate via Raft to
+// form the fault-tolerant key/value service.
+// me is the index of the current server in servers[].
+// the k/v server should store snapshots through the underlying Raft
+// implementation, which should call persister.SaveStateAndSnapshot() to
+// atomically save the Raft state along with the snapshot.
+// the k/v server should snapshot when Raft's saved state exceeds maxraftstate bytes,
+// in order to allow Raft to garbage-collect its log. if maxraftstate is -1,
+// you don't need to snapshot.
+// StartKVServer() must return quickly, so it should start goroutines
+// for any long-running work.
+//
+func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
+	// call labgob.Register on structures you want
+	// Go's RPC library to marshall/unmarshall.
+	DPrintf("kvserver start")
+	labgob.Register(Op{})
+
+	kv := new(KVServer)
+	kv.me = me
+	kv.maxraftstate = maxraftstate
+
+	// You may need initialization code here.
+
+	kv.applyCh = make(chan raft.ApplyMsg)
+	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+
+	// You may need initialization code here.
+	kv.kvPairs = make(map[string]string)
+
+	return kv
 }
 
 //
@@ -67,35 +146,21 @@ func (kv *KVServer) killed() bool {
 	return z == 1
 }
 
-//
-// servers[] contains the ports of the set of
-// servers that will cooperate via Raft to
-// form the fault-tolerant key/value service.
-// me is the index of the current server in servers[].
-// the k/v server should store snapshots through the underlying Raft
-// implementation, which should call persister.SaveStateAndSnapshot() to
-// atomically save the Raft state along with the snapshot.
-// the k/v server should snapshot when Raft's saved state exceeds maxraftstate bytes,
-// in order to allow Raft to garbage-collect its log. if maxraftstate is -1,
-// you don't need to snapshot.
-// StartKVServer() must return quickly, so it should start goroutines
-// for any long-running work.
-//
-func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
-	// call labgob.Register on structures you want
-	// Go's RPC library to marshall/unmarshall.
-	labgob.Register(Op{})
+func (kv *KVServer) print(level int, format string, a ...interface{}) {
+	//m := map[int]bool{
+	//LOG_ALL:       true,
+	//LOG_VOTE:      true,
+	//LOG_HEARTBEAT: true,
+	//LOG_REPLICA_1: true,
+	//LOG_PERSIST: false,
+	//LOG_UN8:     true,
+	//}
+	//if !m[level] {
+	//	return
+	//}
 
-	kv := new(KVServer)
-	kv.me = me
-	kv.maxraftstate = maxraftstate
+	//m2 := []string{"leader", "candidate", "follower"}
 
-	// You may need initialization code here.
-
-	kv.applyCh = make(chan raft.ApplyMsg)
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-
-	// You may need initialization code here.
-
-	return kv
+	//format = fmt.Sprintf("SERVER#%v ROLE#%v TERM#%v - %v", rf.me, m2[rf.role-1], rf.currentTerm, format)
+	DPrintf(format, a...)
 }
