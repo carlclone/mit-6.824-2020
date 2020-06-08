@@ -31,7 +31,6 @@ func (rf *Raft) followerReqsAEHandler(request AppendEntriesRequest) {
 			reply.NeedMaintainIndex = true
 		}
 		rf.updateFollowerCommitIndex(args.LeaderCommitIndex)
-		rf.tryApply()
 	} else {
 		reply.ConflictTerm = args.PrevLogTerm
 		if args.PrevLogIndex <= len(rf.log)-1 {

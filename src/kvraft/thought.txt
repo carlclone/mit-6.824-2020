@@ -1,0 +1,5 @@
+client 提交一个指令 , 指令是到 raft 还是到 server ? 应该是 server , 然后再提交到 raft , 当指令在所有机器上复读了 ,
+就可以返回给 client reply
+
+后面有多台 kv server , server 之间不沟通 , 而是通过 raft 日志保持一致
+

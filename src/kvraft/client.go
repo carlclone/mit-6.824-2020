@@ -2,6 +2,7 @@ package kvraft
 
 import (
 	"labrpc"
+	"time"
 )
 import "crypto/rand"
 import "math/big"
@@ -21,6 +22,7 @@ func nrand() int64 {
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
+	ck.print(LOG_ALL, "client init")
 	// You'll have to add code here.
 	return ck
 }
@@ -29,32 +31,53 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 // fetch the current value for a key.
 // returns "" if the key does not exist.
 // keeps trying forever in the face of all other errors.
-//
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
 func (ck *Clerk) Get(key string) string {
 
-	// You will have to modify this function.
-	return ""
+	ck.print(LOG_ALL, "client get %v", key)
+	args := GetArgs{}
+	args.Key = key
+	for {
+		for i, _ := range ck.servers {
+			reply := GetReply{}
+			ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
+			if ok {
+				if reply.Err == ErrNoKey {
+					ck.print(LOG_ALL, "client errnokey")
+					return ""
+				}
+				if reply.Err == OK {
+					ck.print(LOG_ALL, "client get ok")
+					return reply.Value
+				}
+			}
+		}
+	}
 }
 
 //
 // shared by Put and Append.
 //
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.PutAppend", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
 func (ck *Clerk) PutAppend(key string, value string, op string) {
-	// You will have to modify this function.
+	ck.print(LOG_ALL, "client putAppend %v %v %v", key, value, op)
+	args := PutAppendArgs{}
+	args.Key = key
+	args.Value = value
+	args.Op = op
+	for {
+		for i, _ := range ck.servers {
+			reply := PutAppendReply{}
+			ok := ck.servers[i].Call("KVServer.PutAppend", &args, &reply)
+			//ck.print(LOG_ALL, "client putAppend ok:%v", ok)
+			if ok {
+				if reply.Err == OK {
+					ck.print(LOG_ALL, "client putAppend ok")
+					return
+				}
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	ck.print(LOG_ALL, "client putAppend fail")
 }
 
 func (ck *Clerk) Put(key string, value string) {
@@ -62,4 +85,27 @@ func (ck *Clerk) Put(key string, value string) {
 }
 func (ck *Clerk) Append(key string, value string) {
 	ck.PutAppend(key, value, "Append")
+}
+
+const (
+	LOG_ALL = 1
+)
+
+func (ck *Clerk) print(level int, format string, a ...interface{}) {
+	//m := map[int]bool{
+	//LOG_ALL:       true,
+	//LOG_VOTE:      true,
+	//LOG_HEARTBEAT: true,
+	//LOG_REPLICA_1: true,
+	//LOG_PERSIST: false,
+	//LOG_UN8:     true,
+	//}
+	//if !m[level] {
+	//	return
+	//}
+
+	//m2 := []string{"leader", "candidate", "follower"}
+
+	//format = fmt.Sprintf("SERVER#%v ROLE#%v TERM#%v - %v", rf.me, m2[rf.role-1], rf.currentTerm, format)
+	DPrintf(format, a...)
 }

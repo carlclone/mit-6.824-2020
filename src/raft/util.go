@@ -33,17 +33,17 @@ func (rf *Raft) print(level int, format string, a ...interface{}) {
 	//level != LOG_PERSIST {
 	//	return
 	//}
-	m := map[int]bool{
-		//LOG_ALL:       true,
-		//LOG_VOTE:      true,
-		//LOG_HEARTBEAT: true,
-		//LOG_REPLICA_1: true,
-		LOG_PERSIST: false,
-		LOG_UN8:     true,
-	}
-	if !m[level] {
-		return
-	}
+	//m := map[int]bool{
+	//	//LOG_ALL:       true,
+	//	//LOG_VOTE:      true,
+	//	//LOG_HEARTBEAT: true,
+	//	//LOG_REPLICA_1: true,
+	//	LOG_PERSIST: false,
+	//	LOG_UN8:     true,
+	//}
+	//if !m[level] {
+	//	return
+	//}
 
 	m2 := []string{"leader", "candidate", "follower"}
 

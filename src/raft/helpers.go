@@ -68,17 +68,22 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.print(LOG_ALL, "收到心跳包")
 
 	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
+		rf.print(LOG_ALL, "problem4_")
 		rf.becomeFollower(args.Term)
 		reply.Term = args.Term
 	}
 
 	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
+		rf.print(LOG_ALL, "problem5_")
 		reply.Term = rf.currentTerm
 		return
 	}
 
+	rf.print(LOG_ALL, "problem1_")
 	rf.reqsAERcvd <- AppendEntriesRequest{args, reply}
+	rf.print(LOG_ALL, "problem2_")
 	<-rf.finishReqsAEHandle
+	rf.print(LOG_ALL, "problem3_")
 	return
 }
 
@@ -98,7 +103,9 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	rf.print(LOG_ALL, "sendAe_ ")
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	rf.print(LOG_ALL, "sendAe OK:%v", ok)
 	if ok {
 		rf.respAERcvd <- AppendEntriesRequest{args, reply}
 	}
@@ -173,6 +180,7 @@ func (rf *Raft) Kill() {
 }
 
 func (rf *Raft) killed() bool {
+	rf.print(LOG_ALL, "killed_")
 	z := atomic.LoadInt32(&rf.dead)
 	return z == 1
 }
@@ -201,7 +209,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	if isLeader {
 		index = rf.appendCommand(command)
 		term = rf.currentTerm
-		rf.print(LOG_REPLICA_1, "客户端发起command: isLeader:%v index:%v,term:%v", isLeader, index, term)
+		rf.print(LOG_REPLICA_1, "客户端发起command:%v isLeader:%v index:%v,term:%v ", command, isLeader, index, term)
 	}
 
 	return index, term, isLeader

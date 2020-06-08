@@ -17,6 +17,7 @@ import "io/ioutil"
 // (much more than the paper's range of timeouts).
 const electionTimeout = 1 * time.Second
 
+//注意超时问题
 const linearizabilityCheckTimeout = 1 * time.Second
 
 // get/put/putappend that keep counts
@@ -142,17 +143,18 @@ func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 	}
 }
 
-// Basic test is as follows: one or more clients submitting Append/Get
-// operations to set of servers for some period of time.  After the period is
-// over, test checks that all appended values are present and in order for a
-// particular key.  If unreliable is set, RPCs may fail.  If crash is set, the
-// servers crash after the period is over and restart.  If partitions is set,
-// the test repartitions the network concurrently with the clients and servers. If
-// maxraftstate is a positive number, the size of the state for Raft (i.e., log
-// size) shouldn't exceed 8*maxraftstate. If maxraftstate is negative,
-// snapshots shouldn't be used.
+// Basic test is as follows: one or more clients submitting Append/Get operations to set of servers for some period of time.
+
+// After the period is over, test checks that all appended values are present and in order for a particular key.
+
+// If unreliable is set, RPCs may fail.
+// If crash is set, the servers crash after the period is over and restart.
+// If partitions is set, the test repartitions the network concurrently with the clients and servers.
+// If maxraftstate is a positive number, the size of the state for Raft (i.e., log size) shouldn't exceed 8*maxraftstate.
+// If maxraftstate is negative, snapshots shouldn't be used.
 func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash bool, partitions bool, maxraftstate int) {
 
+	log.Printf("test start")
 	title := "Test: "
 	if unreliable {
 		// the network drops RPC requests and replies.
@@ -183,6 +185,7 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 	cfg.begin(title)
 
 	ck := cfg.makeClient(cfg.All())
+	log.Printf("client make complete")
 
 	done_partitioner := int32(0)
 	done_clients := int32(0)
@@ -447,6 +450,7 @@ func GenericTestLinearizability(t *testing.T, part string, nclients int, nserver
 
 func TestBasic3A(t *testing.T) {
 	// Test: one client (3A) ...
+	DPrintf("testbasic3a start")
 	GenericTest(t, "3A", 1, false, false, false, -1)
 }
 

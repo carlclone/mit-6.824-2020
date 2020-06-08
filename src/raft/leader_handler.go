@@ -12,6 +12,7 @@ func (rf *Raft) leaderReqsAEHandler(request AppendEntriesRequest) {
 
 //收到心跳响应,公共处理
 func (rf *Raft) leaderRespAEHandler(request AppendEntriesRequest) {
+	rf.print(LOG_ALL, "leader 收到心跳响应")
 
 	reply := request.reply
 	server := reply.From
@@ -42,7 +43,6 @@ func (rf *Raft) leaderRespAEHandler(request AppendEntriesRequest) {
 			rf.print(LOG_ALL, "维护matchIndex from %v,matchIndex:%v", server, reply.MatchIndex)
 			rf.matchIndex[server] = reply.MatchIndex
 			rf.updateLeaderCommitStatus()
-			rf.tryApply()
 		}
 	}
 

@@ -1,6 +1,7 @@
 package kvraft
 
 import (
+	"fmt"
 	"labgob"
 	"labrpc"
 	"log"
@@ -9,7 +10,7 @@ import (
 	"sync/atomic"
 )
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -45,15 +46,19 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	defer kv.mu.Unlock()
 	key := args.Key
 
-	if _, ok := kv.kvPairs[key]; !ok {
-		reply.Err = ErrNoKey
-		return
-	}
-
 	op := Op{}
 	op.OpName = "Get"
 	op.OpKey = key
-	kv.rf.Start(op)
+	_, _, isLeader := kv.rf.Start(op)
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	if _, ok := kv.kvPairs[key]; !ok {
+		kv.print(LOG_ALL, "server no key %v", kv.kvPairs)
+		reply.Err = ErrNoKey
+		return
+	}
 	msg := <-kv.applyCh
 
 	if msg.CommandValid {
@@ -70,6 +75,8 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
+	kv.print(LOG_ALL, "server putAppend start")
+
 	key := args.Key
 	val := args.Value
 
@@ -77,15 +84,23 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	op.OpName = "PutAppend"
 	op.OpKey = key
 	op.OpVal = val
-	kv.rf.Start(op)
+	_, _, isLeader := kv.rf.Start(op)
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	kv.print(LOG_ALL, "server putAppend isLeader")
 	msg := <-kv.applyCh
+	kv.print(LOG_ALL, "server putAppend receive msg from applyCh %v", msg)
 
 	if msg.CommandValid {
 		kv.kvPairs[key] = val
+		kv.print(LOG_ALL, "server putAppend msg valid %v %v %v", key, val, kv.kvPairs)
 		reply.Err = OK
 		return
 	}
 
+	kv.print(LOG_ALL, "server putAppend msg invalid")
 	reply.Err = ErrWrongLeader
 	return
 }
@@ -161,6 +176,6 @@ func (kv *KVServer) print(level int, format string, a ...interface{}) {
 
 	//m2 := []string{"leader", "candidate", "follower"}
 
-	//format = fmt.Sprintf("SERVER#%v ROLE#%v TERM#%v - %v", rf.me, m2[rf.role-1], rf.currentTerm, format)
+	format = fmt.Sprintf("SERVER#%v  - %v", kv.me, format)
 	DPrintf(format, a...)
 }
