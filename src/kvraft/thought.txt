@@ -3,3 +3,52 @@ client 提交一个指令 , 指令是到 raft 还是到 server ? 应该是 serve
 
 后面有多台 kv server , server 之间不沟通 , 而是通过 raft 日志保持一致
 
+
+x 0 0 yx 0 1 yx 0 2 yx 0 3 yx 0 4 yx 0 5 yx 0 6 yx 0 7 yx 0 8 yx 0 9 yx 0 10 yx 0 11 yx 0 12 yx 0 13 yx 0 14 yx 0 15 yx 0 16 yx 0 17 yx 0 18 yx 0 19 yx 0 20 yx 0 21 yx 0 22 yx 0 23 yx 0 24 yx 0 25 yx 0 26 yx 0 27 yx 0 28 yx 0 29 yx 0 30 yx 0 31 yx 0 32 yx 0 33 yx 0 34 yx 0 35 yx 0 36 y
+, got
+x 0 0 yx 0 0 yx 0 1 yx 0 2 yx 0 3 yx 0 4 yx 0 5 yx 0 6 yx 0 7 yx 0 8 yx 0 9 yx 0 10 yx 0 11 yx 0 12 yx 0 13 yx 0 14 yx 0 15 yx 0 16 yx 0 17 yx 0 18 yx 0 19 yx 0 19 yx 0 19 yx 0 20 yx 0 21 yx 0 22 yx 0 23 yx 0 24 yx 0 25 yx 0 26 yx 0 27 yx 0 28 yx 0 29 yx 0 30 yx 0 31 yx 0 32 yx 0 33 yx 0 34 yx 0 35 yx 0 36 yx 0 36 y
+
+Process finished with exit code 1
+
+tryApply得放到另一个线程 , 因为applyCh是阻塞的,  client可能没那么及时去取 , 导致阻塞住follower对AppendEntries的处理
+
+老毛病犯了 , 只满足了一个case
+
+
+模型:
+
+一个重放日志线程
+
+
+需要解决的问题:
+duplicate request
+term changed / leader replaced
+
+
+
+
+put和append , 和重放线程建立一个"连接" , 当重放线程完成了该index的apply时,从该连接告知结果 , 然后响应客户端
+get请求 , 同上
+
+
+要保证强一致性就要牺牲性能 , 等到raft复制到大多数peer的时候, 才能返回给client
+
+
+
+
+模型2:
+
+使用有限状态机 : (GETTING , PUTTING , APPENDING )合并成REQUESTING ?, LISTENING
+
+
+desireIndex , 希望复制到大多数的command的index
+
+
+    问题: 上一次没有read出来的结果可能被下一个请求read掉 , 造成错乱 , 用上面那个模型,每个请求都是单独的通道,就不会发生这样的事
+    但是真的会发生这种问题吗 , 假设处于LISTENING状态,那么保证状态设置是原子性的情况下, 什么情况会没有读出来? 只想到了crash,那crash所有状态都重置了,
+    client也resend请求到其他server了,就没有这个问题啊
+
+    但是如果要实现恢复和snapshot,问题就来了... ?? 哪来的问题,恢复的状态回到LISTENING就行了
+
+
+

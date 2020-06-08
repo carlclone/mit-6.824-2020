@@ -8,6 +8,7 @@ import (
 	"raft"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const Debug = 1
@@ -23,9 +24,10 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	OpName string
-	OpKey  string
-	OpVal  string
+	OpName    string
+	OpKey     string
+	OpVal     string
+	RequestId int64
 }
 
 type KVServer struct {
@@ -85,6 +87,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	op.OpName = args.Op
 	op.OpKey = key
 	op.OpVal = val
+	op.RequestId = args.RequestId
 	_, _, isLeader := kv.rf.Start(op)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
@@ -99,20 +102,8 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.print(LOG_ALL, "server putAppend receive msg from applyCh %v", msg)
 
 	if msg.CommandValid {
-		switch args.Op {
-		case "Put":
-			kv.print(LOG_ALL, "走这里put %v", kv.kvPairs)
-			kv.kvPairs[key] = val
-			kv.requestCache[args.RequestId] = true
-		case "Append":
-			kv.print(LOG_ALL, "走这里append %v", kv.kvPairs)
-			if _, ok := kv.kvPairs[key]; ok {
-				kv.kvPairs[key] = kv.kvPairs[key] + val
-			} else {
-				kv.kvPairs[key] = val
-			}
-			kv.requestCache[args.RequestId] = true
-		}
+		kv.execPutAppend(op)
+		kv.requestCache[args.RequestId] = true
 
 		kv.print(LOG_ALL, "server putAppend msg valid %v %v %v", key, val, kv.kvPairs)
 		reply.Err = OK
@@ -122,6 +113,39 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.print(LOG_ALL, "server putAppend msg invalid")
 	reply.Err = ErrWrongLeader
 	return
+}
+
+func (kv *KVServer) preCheck() {
+	select {
+	case msg := <-kv.applyCh:
+		op := msg.Command.(Op)
+		kv.execPutAppend(op)
+		if op.OpName != "GET" {
+			kv.requestCache[op.RequestId] = true
+		}
+
+	case <-time.After(10 * time.Millisecond):
+
+	}
+
+}
+
+func (kv *KVServer) execPutAppend(op Op) {
+	key := op.OpKey
+	val := op.OpVal
+	switch op.OpName {
+	case "Put":
+		kv.print(LOG_ALL, "走这里put %v", kv.kvPairs)
+		kv.kvPairs[key] = val
+	case "Append":
+		kv.print(LOG_ALL, "走这里append %v", kv.kvPairs)
+		if _, ok := kv.kvPairs[key]; ok {
+			kv.kvPairs[key] = kv.kvPairs[key] + val
+		} else {
+			kv.kvPairs[key] = val
+		}
+	}
+
 }
 
 //
@@ -156,6 +180,14 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 	kv.kvPairs = make(map[string]string)
 	kv.requestCache = make(map[int64]bool)
+
+	go func() {
+		for {
+			kv.mu.Lock()
+			kv.preCheck()
+			kv.mu.Unlock()
+		}
+	}()
 
 	return kv
 }
