@@ -132,17 +132,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//主事件循环线程
 	go func() {
 		for {
-			rf.print(LOG_ALL, "卡了吗")
 			select {
 			case request := <-rf.reqsAERcvd:
-				rf.print(LOG_ALL, "卡了111")
 				rf.mu.Lock()
 				switch rf.role {
 				case ROLE_LEADER:
-					rf.print(LOG_ALL, "leader111")
 					rf.leaderReqsAEHandler(request)
 				case ROLE_CANDIDATE:
-					rf.print(LOG_ALL, "CC1")
 					rf.candReqsAEHandler(request)
 				case ROLE_FOLLOWER:
 					rf.resetTimer <- true
@@ -151,41 +147,31 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.mu.Unlock()
 
 			case request := <-rf.reqsRVRcvd:
-				rf.print(LOG_ALL, "卡了222")
 				rf.mu.Lock()
-				rf.print(LOG_ALL, "收到投票请求")
 				switch rf.role {
 				case ROLE_LEADER:
-					rf.print(LOG_ALL, "leader222")
 					rf.leaderReqsRVHandler(request)
 				case ROLE_CANDIDATE:
-					rf.print(LOG_ALL, "CC2")
 					rf.candReqsRVHandler(request)
 				case ROLE_FOLLOWER:
-					rf.print(LOG_ALL, "follower 开始处理投票请求")
 					rf.resetTimer <- true
 					rf.followerReqsRVHandler(request)
 				}
 				rf.mu.Unlock()
 			case request := <-rf.respAERcvd:
-				rf.print(LOG_ALL, "卡了333")
 				rf.mu.Lock()
 				switch rf.role {
 				case ROLE_LEADER:
-					rf.print(LOG_ALL, "leader333")
 					rf.leaderRespAEHandler(request)
 				case ROLE_CANDIDATE:
 				case ROLE_FOLLOWER:
 				}
 				rf.mu.Unlock()
 			case request := <-rf.respRVRcvd:
-				rf.print(LOG_ALL, "卡了444")
 				rf.mu.Lock()
-				rf.print(LOG_ALL, "收到投票响应")
 				switch rf.role {
 				case ROLE_LEADER:
 				case ROLE_CANDIDATE:
-					rf.print(LOG_ALL, "CC4")
 					rf.candRespRVHandler(request)
 				case ROLE_FOLLOWER:
 				}
