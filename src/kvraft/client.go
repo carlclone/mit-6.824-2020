@@ -63,6 +63,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	args.Key = key
 	args.Value = value
 	args.Op = op
+	args.RequestId = nrand()
 	for {
 		for i, _ := range ck.servers {
 			reply := PutAppendReply{}

@@ -38,7 +38,8 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	kvPairs map[string]string
+	kvPairs      map[string]string
+	requestCache map[int64]bool
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
@@ -81,7 +82,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	val := args.Value
 
 	op := Op{}
-	op.OpName = "PutAppend"
+	op.OpName = args.Op
 	op.OpKey = key
 	op.OpVal = val
 	_, _, isLeader := kv.rf.Start(op)
@@ -89,12 +90,30 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
+	if kv.requestCache[args.RequestId] == true {
+		reply.Err = OK
+		return
+	}
 	kv.print(LOG_ALL, "server putAppend isLeader")
 	msg := <-kv.applyCh
 	kv.print(LOG_ALL, "server putAppend receive msg from applyCh %v", msg)
 
 	if msg.CommandValid {
-		kv.kvPairs[key] = val
+		switch args.Op {
+		case "Put":
+			kv.print(LOG_ALL, "走这里put %v", kv.kvPairs)
+			kv.kvPairs[key] = val
+			kv.requestCache[args.RequestId] = true
+		case "Append":
+			kv.print(LOG_ALL, "走这里append %v", kv.kvPairs)
+			if _, ok := kv.kvPairs[key]; ok {
+				kv.kvPairs[key] = kv.kvPairs[key] + val
+			} else {
+				kv.kvPairs[key] = val
+			}
+			kv.requestCache[args.RequestId] = true
+		}
+
 		kv.print(LOG_ALL, "server putAppend msg valid %v %v %v", key, val, kv.kvPairs)
 		reply.Err = OK
 		return
@@ -136,6 +155,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 	kv.kvPairs = make(map[string]string)
+	kv.requestCache = make(map[int64]bool)
 
 	return kv
 }

@@ -10,9 +10,10 @@ type Err string
 
 // Put or Append
 type PutAppendArgs struct {
-	Key   string
-	Value string
-	Op    string // "Put" or "Append"
+	Key       string
+	Value     string
+	Op        string // "Put" or "Append"
+	RequestId int64
 }
 
 type PutAppendReply struct {
