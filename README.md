@@ -35,7 +35,12 @@ All labs and assignment for the course
 
 
 - [ ] Lab3 KV Raft
+  - [ ] Part 3A KV Client/Server
+  - [ ] Part 3B Log Compaction
+  
 - [ ] Lab4 Sharded KV
+  - [ ] Part 4A
+  - [ ] Part 4B
 
 
 ---
