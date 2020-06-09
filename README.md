@@ -40,7 +40,9 @@ All labs and assignment for the course
 
 ---
 
-### Lab3
+### Lab3A
+
+[section8 翻译摘抄]()
 
 我的实现:
 ```
