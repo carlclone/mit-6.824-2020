@@ -2,7 +2,6 @@ package kvraft
 
 import (
 	"labrpc"
-	"time"
 )
 import "crypto/rand"
 import "math/big"
@@ -76,7 +75,6 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 				}
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	ck.print(LOG_ALL, "client putAppend fail")
 }

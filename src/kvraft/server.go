@@ -45,8 +45,6 @@ type KVServer struct {
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
 	key := args.Key
 
 	op := Op{}
