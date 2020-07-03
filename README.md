@@ -75,7 +75,7 @@ applyThread 和每个 op 之间建立一个管道
 
 ```
 
-lab3 自己是用状态机的模型写的, 虽然能过但是在 PutAppend 和 Get 都加了锁,并发很低 . 去学习了别人的实现 , 发现设计思路很棒 , 模仿了 raft 的 start()函数和 applyCh , 对每个 op 进行 start , 然后每个 op 分配一个 channel 等待结果 , 并发无敌 , 感叹自己实在是想不到这种写法 (模型也套娃 ? 为了方便记忆我就把这个叫做 start-and-wait 模型吧)
+lab3 自己是用状态机的模型写的, 虽然能过但是在 PutAppend 和 Get 都加了锁,并发很低 . 去学习了别人的实现 , 发现设计思路很棒 , 模仿了 raft 的 start()函数和 applyCh , 对每个 op 进行 start , 然后每个 op 分配一个 channel 等待结果 , 并发无敌 , 感叹自己实在是想不到这种写法 , (队列+异步通知模型)
 
 
 ### Lab2
