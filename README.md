@@ -35,7 +35,20 @@ All labs and assignment for the course
 
 
 - [ ] Lab3 KV Raft
-  - [x] Part 3A KV Client/Server
+  - [ ] Part 3A KV Client/Server
+    - [x] TestBasic3A
+    - [x] TestConcurrent3A
+    - [x] TestUnreliable3A
+    - [x] TestUnreliableOneKey3A
+    - [x] TestOnePartition3A
+    - [ ] TestManyPartitionsOneClient3A
+    - [ ] TestManyPartitionsManyClients3A
+    - [ ] TestPersistOneClient3A
+    - [ ] TestPersistConcurrent3A
+    - [ ] TestPersistConcurrentUnreliable3A
+    - [ ] TestPersistPartition3A
+    - [ ] TestPersistPartitionUnreliable3A
+    - [ ] TestPersistPartitionUnreliableLinearizable3A
   - [ ] Part 3B Log Compaction
   
 - [ ] Lab4 Sharded KV
