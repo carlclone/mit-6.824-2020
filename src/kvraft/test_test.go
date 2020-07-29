@@ -509,17 +509,25 @@ func TestOnePartition3A(t *testing.T) {
 	defer cfg.cleanup()
 	ck := cfg.makeClient(cfg.All())
 
+	//没有分区的时候,放了个 13 , 此时只有一个 client
 	Put(cfg, ck, "1", "13")
 
 	cfg.begin("Test: progress in majority (3A)")
 
+	//分区 并且把 leader 放入了少数区,
+	// 表示在少数区里提交的 kv 不会成功
+	// 多数区里会产生一个新 leader? kv 提交会成功
+	// 分区恢复之后, 旧 leader 会变成 follower 并且同步信息
 	p1, p2 := cfg.make_partition()
+	//p1 是多数区,p2 是少数区,老 leader 也在这个区
 	cfg.partition(p1, p2)
 
+	//创建 3 个 client,连到不同区
 	ckp1 := cfg.makeClient(p1)  // connect ckp1 to p1
 	ckp2a := cfg.makeClient(p2) // connect ckp2a to p2
 	ckp2b := cfg.makeClient(p2) // connect ckp2b to p2
 
+	//pass
 	Put(cfg, ckp1, "1", "14")
 	check(cfg, t, ckp1, "1", "14")
 
@@ -529,6 +537,7 @@ func TestOnePartition3A(t *testing.T) {
 	done1 := make(chan bool)
 
 	cfg.begin("Test: no progress in minority (3A)")
+	//按理说不会成功
 	go func() {
 		Put(cfg, ckp2a, "1", "15")
 		done0 <- true
@@ -538,6 +547,7 @@ func TestOnePartition3A(t *testing.T) {
 		done1 <- true
 	}()
 
+	//这个正常情况是超时
 	select {
 	case <-done0:
 		t.Fatalf("Put in minority completed")
@@ -546,12 +556,16 @@ func TestOnePartition3A(t *testing.T) {
 	case <-time.After(time.Second):
 	}
 
+	//pass
 	check(cfg, t, ckp1, "1", "14")
+
 	Put(cfg, ckp1, "1", "16")
+	//pass
 	check(cfg, t, ckp1, "1", "16")
 
 	cfg.end()
 
+	//这边出问题 , 到这里之前 k=1 v=16 在多数区
 	cfg.begin("Test: completion after heal (3A)")
 
 	cfg.ConnectAll()
@@ -560,6 +574,10 @@ func TestOnePartition3A(t *testing.T) {
 
 	time.Sleep(electionTimeout)
 
+	//重连之后,在这个分区里的 client 之前的 put 1 15和 get 1的操作才完成 , 意味着 client 要不断重试
+	//检查少数的情况下是否也在不断重试
+	// 是不是 raft 的 bug,少数区也有 leader ?
+	//没在这里报错,client 是有在重试的 , 但是没有看到 put 1 15
 	select {
 	case <-done0:
 	case <-time.After(30 * 100 * time.Millisecond):

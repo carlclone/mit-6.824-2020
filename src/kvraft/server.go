@@ -72,8 +72,10 @@ func (kv *KVServer) appendEntryToLog(op Op) bool {
 
 	//增加超时机制
 	select {
-	case <-pipe:
-		return true
+	case op1 := <-pipe:
+		// fix bug , 分区故障恢复后, index 对应的 op 可能不是同一个(被新 leader 的覆盖),要做检查,并让客户端重试
+		// 还好 raft 认真做了,细节这么久还记得
+		return op == op1
 	case <-time.After(1000 * time.Millisecond):
 		return false
 	}

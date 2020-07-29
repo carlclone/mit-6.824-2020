@@ -85,7 +85,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			//ck.print(LOG_ALL, "client putAppend ok:%v", ok)
 			if ok {
 				if reply.Err == OK {
-					ck.print(LOG_ALL, "client putAppend ok")
+					ck.print(LOG_ALL, "client putAppend ok k%v v%v", key, value)
 					return
 				}
 			}
