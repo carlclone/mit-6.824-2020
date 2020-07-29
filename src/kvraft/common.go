@@ -14,6 +14,7 @@ type PutAppendArgs struct {
 	Value     string
 	Op        string // "Put" or "Append"
 	RequestId int64
+	ClientId  int64
 }
 
 type PutAppendReply struct {
@@ -21,8 +22,10 @@ type PutAppendReply struct {
 }
 
 type GetArgs struct {
-	Key string
-	// You'll have to add definitions here.
+	Op        string //"GET"
+	Key       string
+	RequestId int64
+	ClientId  int64
 }
 
 type GetReply struct {

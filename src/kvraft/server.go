@@ -11,23 +11,12 @@ import (
 	"time"
 )
 
-const Debug = 1
-
-func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug > 0 {
-		log.Printf(format, a...)
-	}
-	return
-}
-
 type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-	OpName    string
-	OpKey     string
-	OpVal     string
+	Name      string
+	Key       string
+	Val       string
 	RequestId int64
+	ClientId  int64
 }
 
 type KVServer struct {
@@ -41,109 +30,74 @@ type KVServer struct {
 
 	// Your definitions here.
 	kvPairs      map[string]string
-	requestCache map[int64]bool
+	requestCache map[int64]bool  //缓存客户端最后一个请求的结果
+	ackNo        map[int64]int64 //保存客户端最后一个确认执行了的requestId，防止重复put 或者append
+	pipeArr      map[int]chan Op // raft apply index -> pipe , 真的想不到这种解法，理解都有难度                todo;错误的定义，教训 :保存客户端对应的响应pipe , 因为一个server可以并发处理多个客户端的请求
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	key := args.Key
-
+	//构造op结构体
 	op := Op{}
-	op.OpName = "Get"
-	op.OpKey = key
-	_, _, isLeader := kv.rf.Start(op)
-	if !isLeader {
+	op.Name = args.Op
+	op.Key = args.Key
+	op.RequestId = args.RequestId
+	op.ClientId = args.ClientId
+
+	//append op到raft log里
+	appendSucc := kv.appendEntryToLog(op)
+
+	//确认log情况
+	if !appendSucc {
 		reply.Err = ErrWrongLeader
-		return
+	} else {
+		val, keyExist := kv.kvPairs[op.Key]
+		if !keyExist {
+			reply.Err = ErrNoKey
+		} else {
+			reply.Err = OK
+			reply.Value = val
+		}
 	}
-	if _, ok := kv.kvPairs[key]; !ok {
-		kv.print(LOG_ALL, "server no key %v", kv.kvPairs)
-		reply.Err = ErrNoKey
-		return
-	}
-	msg := <-kv.applyCh
-
-	if msg.CommandValid {
-		reply.Err = OK
-		reply.Value = kv.kvPairs[key]
-		return
-	}
-
-	reply.Err = ErrWrongLeader
 	return
+}
+
+func (kv *KVServer) appendEntryToLog(op Op) bool {
+	index, _, isLeader := kv.rf.Start(op)
+	if !isLeader {
+		return false
+	}
+	//是leader，创建和loop thread的管道，监听
+	pipe := make(chan Op, 1)
+	kv.pipeArr[index] = pipe
+
+	//增加超时机制
+	select {
+	case <-pipe:
+		return true
+	case <-time.After(1000 * time.Millisecond):
+		return false
+	}
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-
-	kv.print(LOG_ALL, "server putAppend start")
-
-	key := args.Key
-	val := args.Value
-
+	//构造Op结构体
 	op := Op{}
-	op.OpName = args.Op
-	op.OpKey = key
-	op.OpVal = val
+	op.Name = args.Op
+	op.Key = args.Key
+	op.Val = args.Value
 	op.RequestId = args.RequestId
-	_, _, isLeader := kv.rf.Start(op)
-	if !isLeader {
+	op.ClientId = args.ClientId
+
+	//append 到raft log中
+	appendSucc := kv.appendEntryToLog(op)
+
+	//确认log情况
+	if !appendSucc {
 		reply.Err = ErrWrongLeader
-		return
-	}
-	if kv.requestCache[args.RequestId] == true {
+	} else {
 		reply.Err = OK
-		return
 	}
-	kv.print(LOG_ALL, "server putAppend isLeader")
-	msg := <-kv.applyCh
-	kv.print(LOG_ALL, "server putAppend receive msg from applyCh %v", msg)
-
-	if msg.CommandValid {
-		kv.execPutAppend(op)
-		kv.requestCache[args.RequestId] = true
-
-		kv.print(LOG_ALL, "server putAppend msg valid %v %v %v", key, val, kv.kvPairs)
-		reply.Err = OK
-		return
-	}
-
-	kv.print(LOG_ALL, "server putAppend msg invalid")
-	reply.Err = ErrWrongLeader
 	return
-}
-
-func (kv *KVServer) preCheck() {
-	select {
-	case msg := <-kv.applyCh:
-		op := msg.Command.(Op)
-		kv.execPutAppend(op)
-		if op.OpName != "GET" {
-			kv.requestCache[op.RequestId] = true
-		}
-
-	case <-time.After(10 * time.Millisecond):
-
-	}
-
-}
-
-func (kv *KVServer) execPutAppend(op Op) {
-	key := op.OpKey
-	val := op.OpVal
-	switch op.OpName {
-	case "Put":
-		kv.print(LOG_ALL, "走这里put %v", kv.kvPairs)
-		kv.kvPairs[key] = val
-	case "Append":
-		kv.print(LOG_ALL, "走这里append %v", kv.kvPairs)
-		if _, ok := kv.kvPairs[key]; ok {
-			kv.kvPairs[key] = kv.kvPairs[key] + val
-		} else {
-			kv.kvPairs[key] = val
-		}
-	}
-
 }
 
 //
@@ -179,11 +133,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.kvPairs = make(map[string]string)
 	kv.requestCache = make(map[int64]bool)
 
+	//开启loop thread , 监听applyCh
 	go func() {
 		for {
-			kv.mu.Lock()
-			kv.preCheck()
-			kv.mu.Unlock()
+			msg := <-kv.applyCh
+
 		}
 	}()
 
@@ -209,6 +163,15 @@ func (kv *KVServer) Kill() {
 func (kv *KVServer) killed() bool {
 	z := atomic.LoadInt32(&kv.dead)
 	return z == 1
+}
+
+const Debug = 1
+
+func DPrintf(format string, a ...interface{}) (n int, err error) {
+	if Debug > 0 {
+		log.Printf(format, a...)
+	}
+	return
 }
 
 func (kv *KVServer) print(level int, format string, a ...interface{}) {

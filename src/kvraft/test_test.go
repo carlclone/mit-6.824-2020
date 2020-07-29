@@ -459,11 +459,13 @@ func TestConcurrent3A(t *testing.T) {
 	GenericTest(t, "3A", 5, false, false, false, -1)
 }
 
+//不可靠情况， 可能发生的情况， 重复请求 ,重复appendEntry , 还是自己跑一遍吧。。可能有raft的bug 和其他各种问题
 func TestUnreliable3A(t *testing.T) {
 	// Test: unreliable net, many clients (3A) ...
 	GenericTest(t, "3A", 5, true, false, false, -1)
 }
 
+//并发append同一个key
 func TestUnreliableOneKey3A(t *testing.T) {
 	const nservers = 3
 	cfg := make_config(t, nservers, true, -1)
@@ -499,6 +501,8 @@ func TestUnreliableOneKey3A(t *testing.T) {
 // Submit a request in the minority partition and check that the requests
 // doesn't go through until the partition heals.  The leader in the original
 // network ends up in the minority partition.
+
+// <大多数的情况，不会有任何client操作成功 ， 网络分区恢复后，可继续操作 ，感觉可能触发raft的问题多一点
 func TestOnePartition3A(t *testing.T) {
 	const nservers = 5
 	cfg := make_config(t, nservers, false, -1)
@@ -574,6 +578,7 @@ func TestOnePartition3A(t *testing.T) {
 	cfg.end()
 }
 
+//更多partition。。
 func TestManyPartitionsOneClient3A(t *testing.T) {
 	// Test: partitions, one client (3A) ...
 	GenericTest(t, "3A", 1, false, false, true, -1)
