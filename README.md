@@ -60,6 +60,10 @@ All labs and assignment for the course
 
 ### Lab3A
 
+> bug 1 OnePartition3A
+
+分区故障恢复后, index 对应的 op 可能不是同一个(被新 leader 的覆盖),但是 channel 已经关联了 index 了,有什么其他办法区分这种场景呢? op 的一致性检查,并让客户端重试 ,还好 raft 认真做了,细节这么久还记得
+
 
 section 8 翻译摘抄
 > https://www.cnblogs.com/linbingdong/p/6442673.html
