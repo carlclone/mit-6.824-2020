@@ -32,7 +32,7 @@ type KVServer struct {
 	kvPairs      map[string]string
 	requestCache map[int64]bool  //缓存客户端最后一个请求的结果
 	ackNo        map[int64]int64 //保存客户端最后一个确认执行了的requestId，防止重复put 或者append
-	pipeArr      map[int]chan Op // raft apply index -> pipe , 真的想不到这种解法，理解都有难度                todo;错误的定义，教训 :保存客户端对应的响应pipe , 因为一个server可以并发处理多个客户端的请求
+	pipeMap      map[int]chan Op // raft apply index -> pipe , 真的想不到这种解法，理解都有难度                todo;错误的定义，教训 :保存客户端对应的响应pipe , 因为一个server可以并发处理多个客户端的请求
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
@@ -68,7 +68,7 @@ func (kv *KVServer) appendEntryToLog(op Op) bool {
 	}
 	//是leader，创建和loop thread的管道，监听
 	pipe := make(chan Op, 1)
-	kv.pipeArr[index] = pipe
+	kv.pipeMap[index] = pipe
 
 	//增加超时机制
 	select {
@@ -100,6 +100,19 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	return
 }
 
+func (kv *KVServer) isDup(op Op) bool {
+	return kv.ackNo[op.ClientId] >= op.RequestId
+}
+
+func (kv *KVServer) updatePair(op Op) {
+	switch op.Name {
+	case "PUT":
+		kv.kvPairs[op.Key] = op.Val
+	case "APPEND":
+		kv.kvPairs[op.Key] += op.Val
+	}
+}
+
 //
 // servers[] contains the ports of the set of
 // servers that will cooperate via Raft to
@@ -120,6 +133,10 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	DPrintf("kvserver start")
 	labgob.Register(Op{})
 
+	//第一版直接加锁串行执行，和redis类似 ，
+	//但是这里有一个可以优化的点就是raft复制可以同时复制多个，所以在等待raft完成复制的过程可以从一个一个复制 -> 多个一起复制 ,
+	//实现方式是多个请求一起等待server响应，而不是阻塞
+
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
@@ -137,7 +154,16 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	go func() {
 		for {
 			msg := <-kv.applyCh
-
+			//取出obj,强转成Op
+			op := msg.Command.(Op)
+			//如果重复了就不执行put append , 这里主要是幂等问题，get天然幂等，关注重复是否有害
+			if !kv.isDup(op) {
+				kv.updatePair(op)
+			}
+			//取出pipe,返回结果
+			// 有没有这种可能： raft复制的太快了，pipe还没创建完就被applyCh读到了
+			pipe := kv.pipeMap[msg.CommandIndex]
+			pipe <- op
 		}
 	}()
 
