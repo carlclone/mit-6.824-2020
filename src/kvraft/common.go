@@ -6,6 +6,12 @@ const (
 	ErrWrongLeader = "ErrWrongLeader"
 )
 
+const (
+	PUT    = "PUT"
+	APPEND = "APPEND"
+	GET    = "GET"
+)
+
 type Err string
 
 // Put or Append

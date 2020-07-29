@@ -47,6 +47,7 @@ func (ck *Clerk) Get(key string) string {
 	args.Key = key
 	args.ClientId = ck.id
 	args.RequestId = ck.genReqId()
+	args.Op = GET
 
 	for {
 		for i, _ := range ck.servers {
@@ -90,14 +91,13 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			}
 		}
 	}
-	ck.print(LOG_ALL, "client putAppend fail")
 }
 
 func (ck *Clerk) Put(key string, value string) {
-	ck.PutAppend(key, value, "Put")
+	ck.PutAppend(key, value, PUT)
 }
 func (ck *Clerk) Append(key string, value string) {
-	ck.PutAppend(key, value, "Append")
+	ck.PutAppend(key, value, APPEND)
 }
 
 const (

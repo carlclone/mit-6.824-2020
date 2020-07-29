@@ -105,12 +105,17 @@ func (kv *KVServer) isDup(op Op) bool {
 }
 
 func (kv *KVServer) updatePair(op Op) {
+
 	switch op.Name {
-	case "PUT":
+	case PUT:
+		kv.print(LOG_ALL, "updatePair")
 		kv.kvPairs[op.Key] = op.Val
-	case "APPEND":
+	case APPEND:
+		kv.print(LOG_ALL, "updatePair")
 		kv.kvPairs[op.Key] += op.Val
 	}
+	kv.print(LOG_ALL, "reqId:%v", op.RequestId)
+	kv.ackNo[op.ClientId] = op.RequestId
 }
 
 //
@@ -149,6 +154,8 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 	kv.kvPairs = make(map[string]string)
 	kv.requestCache = make(map[int64]bool)
+	kv.ackNo = make(map[int64]int64)
+	kv.pipeMap = make(map[int]chan Op)
 
 	//开启loop thread , 监听applyCh
 	go func() {
@@ -156,14 +163,20 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 			msg := <-kv.applyCh
 			//取出obj,强转成Op
 			op := msg.Command.(Op)
+
 			//如果重复了就不执行put append , 这里主要是幂等问题，get天然幂等，关注重复是否有害
 			if !kv.isDup(op) {
 				kv.updatePair(op)
 			}
 			//取出pipe,返回结果
 			// 有没有这种可能： raft复制的太快了，pipe还没创建完就被applyCh读到了
-			pipe := kv.pipeMap[msg.CommandIndex]
-			pipe <- op
+			pipe, ok := kv.pipeMap[msg.CommandIndex]
+			if ok {
+				kv.print(LOG_ALL, "取到msg %v", msg)
+
+				pipe <- op
+			}
+
 		}
 	}()
 
