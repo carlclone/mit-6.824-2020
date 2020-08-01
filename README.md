@@ -76,13 +76,47 @@ All labs and assignment for the course
 
  2020/08/01 ~
  
+ ```
  kvserver 需要时不时保存一个当前状态的快照 , raft 把这<=快照的 log 都 discard
  
  当 kvserver 重启时 或者 和 leader 的数据差异太大时 (redis 也有这么一个策略) , 
  则会先 install 快照,然后才从这个点(>) replay raft log,section7 有粗略提到,
- 要求自己设计 server 和 raft 之间的接口
+ 要求自己设计 server 和 raft 之间的接口 , 来让 raft 丢弃日志项 (....)
+ maxRaftState 最大的 persister 字节 , (raft 日志和一些状态变量,不包括快照)
+ RaftStateSize()接口可以获得当前大小, 如果到了临界值了, raft 就通知 server创建快照, 创建完毕后 s 通知 r 丢弃日志
+ 如果 maxRaftState=-1 相当于关闭快照功能
+ 
+ raft 会有这样一个接口,接收一个 index,丢弃这个 index 之前的所有 log, <index (不包含) 
+ 检测的职责交给了 kvserver , raft 要提供一个接口给 s 作检测用
+ s 会把快照交给 raft 保存,有一个SaveStateAndSnapShot()接口 (raft 的状态也会一起保存) , s 重启时也会从 persister 读取快照恢复
+ ReadSnapShot()接口读取
+ 需要存储到快照中的信息 , kv 对 map , 检查重复操作的状态
+ 
+  InstallSnapshot RPC , leader 和 follower 的交互 , leader 丢弃 log 后, 
+  通过这个 rpc 发送 snapshot 到follower , follower 收到后,
+  通过 applyCh 和修改 ApplyMSG 结构发给它对于的 kvserver ? 不太理解 ,
+  是只有 leader 才会做快照动作, 所以 leader 需要把这个动作同步到其他 follower , 但是为什么 follower 要把快照发给 kvs'
+  从字面理解吧 , 就是安装快照 , 把安装快照当做一个 command 复制到其他 peer , 各个 peer 告知对应的 kvs 安装
+  先 pass 了TestSnapshotRPC , 再做其他的
+  A reasonable amount of time to take for the Lab 3 tests is 400 seconds of real 
+  time and 700 seconds of CPU time. Further,
+   go test -run TestSnapshotSize should take less than 20 seconds of real time.
+   
+   raft 只是一致性协议, 不管命令内容是什么, 只负责复制和传递命令(applyCh) , apply 的任务是上层的应用
+   和上层的交互多了 discard 操作 , 多了 InstallSnapShotRPC ... 
+   当做给 raft 增加快照功能.. , 又回到 raft ,痛苦开始了
+   好像有点耦合啊..
+   提供一个接口, 上层应用通知 raft 什么时候打快照 , 
+   SaveSnap(快照,index) , raft 保存完后丢弃 index 之前的, 
+   
+```
+
+ 
+ 
  
  stop : 看到You must design an interface between you , https://pdos.csail.mit.edu/6.824/labs/lab-kvraft.html
+ 
+ 
 
 
 ### Lab3A
