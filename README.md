@@ -63,6 +63,13 @@ All labs and assignment for the course
   - [ ] Part 4B
 
 
+- [ ] Paper Reading
+    - [ ] ...
+
+- [ ] 源码阅读
+    - [ ] etcd-Raft
+    
+
 ---
 
 ### Lab3B
