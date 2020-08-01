@@ -65,9 +65,22 @@ All labs and assignment for the course
 
 ---
 
+### Lab3B
+
+ 2020/08/01 ~
+ 
+ kvserver 需要时不时保存一个当前状态的快照 , raft 把这<=快照的 log 都 discard
+ 
+ 当 kvserver 重启时 或者 和 leader 的数据差异太大时 (redis 也有这么一个策略) , 
+ 则会先 install 快照,然后才从这个点(>) replay raft log,section7 有粗略提到,
+ 要求自己设计 server 和 raft 之间的接口
+ 
+ stop : 看到You must design an interface between you , https://pdos.csail.mit.edu/6.824/labs/lab-kvraft.html
+
+
 ### Lab3A
 
- 2020/07/03 - 2020/08/01
+ 2020/07/03 - 2020/08/01 再不想看的东西,一天看一点,总有一天能做完 xd
 
 > bug 2 concurrent map read and write
 
