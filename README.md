@@ -73,7 +73,7 @@ All labs and assignment for the course
 
 3A 遇到了很多并发 bug,总结了一下主要原因,没有梳理好哪些地方会产生并发
 
-1.同一个客户端会同时发出两个请求吗(get 和 putappend 的排列组合)
+1.同一个客户端会同时发出两个请求吗(get 和 putappend 的排列组合) , 如果会,生成 reqId 哪里有 bug
 
 2.同一个 server 会同时处理多个 client 的请求 吗 , 会
 
