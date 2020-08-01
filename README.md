@@ -235,7 +235,11 @@ lab3 自己是用状态机的模型写的, 虽然能过但是在 PutAppend 和 G
 总算没有烂尾..........
 
 
-### Lab1
+### Lab1 MapReduce
+
+没怎么看论文,课程 note 只讲到了 map 和 reduce, 但是中间其实还有很多步骤, 比如 shuffle,这张图会比较好理解
+
+![asd](https://pic4.zhimg.com/80/v2-5a7cd99e5bec9ca6c21fe084bac0673c_720w.jpg?source=1940ef5c)
 
 Lab1 因为之前写过一个分布式的 crontab ,对 master/worker 的模型还是挺熟悉做起来比较快, 但也只是简单的通过了测试, 用的全局存储 + worker 去轮询 master 的方式, 没有参照论文 ,说起来的话还有很多需要改进的地方
 
