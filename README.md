@@ -183,7 +183,22 @@ lab3 自己是用状态机的模型写的, 虽然能过但是在 PutAppend 和 G
 
 ### Lab1
 
-Lab1 用了 3 天时间,没什么难度,就不做总结了… 不像 Lab2 一个 bug 就是3天
+Lab1 只是简单的通过了测试, 用的全局存储 + worker 去轮询 master 的方式, 没有参照论文 ,说起来的话还有很多需要改进的地方
+
+1.可能存在写入文件到一半崩溃的情况,为了避免读到崩溃的文件, 先写入一个tmp file中,完成后再重命名
+```
+Hints:
+worker进程可能需要等待，因为最后一个mapworker没有完成任务，为了避免忙等，可以设置time.sleep()或者条件变量
+master需要掌握worker的工作时间，超过一定时间（lab建议10s）后重新调度任务
+如果worker出现crash，应当确保它写入的临时文件不会被别的worker读取（因为是残缺文件），所以可以使用ioutil.TempFile创建临时文件并且使用os.Rename自动重命名
+```
+
+2.master 奔溃的解决方案? 多 master ?
+
+3.轮询改为 master 主动调度,并监控 worker 状态
+
+4.map 产生的中间文件存在各个 worker 本地,告知 master 获取地址 , 之后 master 把一批中间文件地址告知 reduce worker 去获取和执行
+
 
 
 
