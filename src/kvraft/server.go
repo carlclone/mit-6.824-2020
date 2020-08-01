@@ -50,7 +50,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	if !appendSucc {
 		reply.Err = ErrWrongLeader
 	} else {
+		kv.mu.Lock()
 		val, keyExist := kv.kvPairs[op.Key]
+		kv.mu.Unlock()
 		if !keyExist {
 			reply.Err = ErrNoKey
 		} else {
@@ -67,8 +69,10 @@ func (kv *KVServer) appendEntryToLog(op Op) bool {
 		return false
 	}
 	//是leader，创建和loop thread的管道，监听
+	kv.mu.Lock()
 	pipe := make(chan Op, 1)
 	kv.pipeMap[index] = pipe
+	kv.mu.Unlock()
 
 	//增加超时机制
 	select {
@@ -167,12 +171,14 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 			op := msg.Command.(Op)
 
 			//如果重复了就不执行put append , 这里主要是幂等问题，get天然幂等，关注重复是否有害
+			kv.mu.Lock()
 			if !kv.isDup(op) {
 				kv.updatePair(op)
 			}
 			//取出pipe,返回结果
 			// 有没有这种可能： raft复制的太快了，pipe还没创建完就被applyCh读到了
 			pipe, ok := kv.pipeMap[msg.CommandIndex]
+			kv.mu.Unlock()
 			if ok {
 				kv.print(LOG_ALL, "取到msg %v", msg)
 

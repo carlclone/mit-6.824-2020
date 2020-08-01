@@ -35,21 +35,28 @@ All labs and assignment for the course
 
 
 - [ ] Lab3 KV Raft
-  - [ ] Part 3A KV Client/Server
+  - [x] Part 3A KV Client/Server
     - [x] TestBasic3A
     - [x] TestConcurrent3A
     - [x] TestUnreliable3A
     - [x] TestUnreliableOneKey3A
     - [x] TestOnePartition3A
-    - [ ] TestManyPartitionsOneClient3A
-    - [ ] TestManyPartitionsManyClients3A
-    - [ ] TestPersistOneClient3A
-    - [ ] TestPersistConcurrent3A
-    - [ ] TestPersistConcurrentUnreliable3A
-    - [ ] TestPersistPartition3A
-    - [ ] TestPersistPartitionUnreliable3A
-    - [ ] TestPersistPartitionUnreliableLinearizable3A
+    - [x] TestManyPartitionsOneClient3A
+    - [x] TestManyPartitionsManyClients3A
+    - [x] TestPersistOneClient3A
+    - [x] TestPersistConcurrent3A
+    - [x] TestPersistConcurrentUnreliable3A
+    - [x] TestPersistPartition3A
+    - [x] TestPersistPartitionUnreliable3A
+    - [x] TestPersistPartitionUnreliableLinearizable3A
   - [ ] Part 3B Log Compaction
+    - [ ] TestSnapshotSize3B
+    - [ ] TestSnapshotRecover3B
+    - [ ] TestSnapshotRecoverManyClients3B
+    - [ ] TestSnapshotUnreliable3B
+    - [ ] TestSnapshotUnreliableRecover3B
+    - [ ] TestSnapshotUnreliableRecoverConcurrentPartition3B
+    - [ ] TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B
   
 - [ ] Lab4 Sharded KV
   - [ ] Part 4A
@@ -59,6 +66,26 @@ All labs and assignment for the course
 ---
 
 ### Lab3A
+
+ 2020/07/03 - 2020/08/01
+
+> bug 2 concurrent map read and write
+
+3A 遇到了很多并发 bug,总结了一下主要原因,没有梳理好哪些地方会产生并发
+
+1.同一个客户端会同时发出两个请求吗(get 和 putappend 的排列组合)
+
+2.同一个 server 会同时处理多个 client 的请求 吗 , 会
+
+3.会不会同时处理一个 client 的多个请求(先梳理 1)
+
+
+加锁的定义要理清楚,到底是在对什么操作,什么资源加锁 , 是想让哪些逻辑串行执行
+
+写基本都发生在 loop thread 中, 写的时候, 上层的 get put append 不能读, 暂时先这样
+
+从画的图来看的话,就是 server1 的多个请求线程和 loop thread 之间需要保证线程安全
+
 
 > bug 1 OnePartition3A
 
