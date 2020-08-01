@@ -16,14 +16,14 @@ All labs and assignment for the course
 
 
   - [x] Part 2B
-    - [x] TestBasicAgree2B 最理想情况下的客户端请求 ,日志复制
-    - [x] TestRPCBytes2B 保证一次agreement 每个 peer只发送一次 RPC
+    - [x] TestBasicAgree2B
+    - [x] TestRPCBytes2B
     - [x] TestFailAgree2B 
     - [x] TestFailNoAgree2B 
     - [x] TestConcurrentStarts2B 
     - [x] TestRejoin2B 
     - [x] TestBackup2B 
-    - [x] TestCount2B 优化,减少一次选举需要的 RPC 次数
+    - [x] TestCount2B
 
   - [x] Part 2C
     - [x] Some2cPersistSimpleTest
