@@ -77,38 +77,57 @@ All labs and assignment for the course
  2020/08/08 逻辑梳理+伪代码
  
  ```
- server 每次 appen entry 的时候检查 maxraftstate 是否超过,
- 超过了则把当前状态保存快照 , 通过SaveSSRPC 传快照和 index给 raft ,
- raft 保存起来, 然后丢弃index 之前的数据
- 
- 通常情况各个 raft peer 各自创建自己的快照 , 
- 
- 除了一些特殊场景, follower 的记录和 leader 差太多了, 比如一个一直宕机,刚加入网络的 follower , leader 会先发快照过去给 follower install , 然后才是复制 log entry
- 
- 如何判断记录差太多 , index 吧 , 如果已有的 index 比 leader 最老的一个还小, 那就要安装快照再复制了
- 
- 安装快照通过 applyCh 发给raft 对应的 kv server , server 安装
- 
- 要求discard 的空间能被 go 垃圾回收, 会丢失 index, 所以之前看到有的设计是另外存 index
- 
- 
- kv s:
- appentryToLog()
- index = raft.start()
- if raft->outOfBound()
- ss = createSnapShotPackage()
- raft->saveSS(ss, index)
- 
- raft:
- saveSS(ss,index)
- persist->saveSS(ss)
- self->discardFrom(index)
- 
- 发送快照给 follower 后, follower
- AppendEntriesRPC()
- if followCommitIndex < leaderOldestIndex
- sendInstallRPC(ss,index)  //保证exactly once , 怎么做 , 加锁+ commitIndex+ lastApplied
- return
+SnapShotCommand {
+kvMap
+ackMap
+reqCache
+}
+
+server 每次 appen entry 的时候检查 maxraftstate 是否超过,
+超过了则把当前状态保存快照 , 通过SaveSSRPC 传快照和 index给 raft ,
+raft 保存起来, 然后丢弃index 之前的数据
+
+通常情况各个 raft peer 各自创建自己的快照 , 
+
+除了一些特殊场景, follower 的记录和 leader 差太多了, 比如一个一直宕机,刚加入网络的 follower , leader 会先发快照过去给 follower install , 然后才是复制 log entry
+
+如何判断记录差太多 , index 吧 , 如果已有的 index 比 leader 最老的一个还小, 那就要安装快照再复制了
+
+安装快照通过 applyCh 发给raft 对应的 kv server , server 安装
+
+要求discard 的空间能被 go 垃圾回收, 会丢失 index, 所以之前看到有的设计是另外存 index
+
+
+kv s:
+appentryToLog()
+index = raft.start()
+if raft->outOfBound()
+ss = createSnapShotPackage()
+raft->saveSS(ss, index)
+
+raft:
+saveSS(ss,index)
+persist->saveSS(ss)
+self->discardFrom(index)
+
+发送快照给 follower 后, follower
+AppendEntriesRPC()
+if followCommitIndex < leaderOldestIndex
+sendInstallRPC(ss,index)  //保证exactly once , 怎么做 
+return
+
+
+follower raft:         (修改了 raft 状态的都记得 persist() )
+
+event: receved InstallSSRPC
+discardFrom(index)
+update commitIndex and lastApplied
+applyCh <- InstallSSCommand
+persistSS()
+persistRaftState()
+
+https://raft.github.io/
+https://www.cnblogs.com/linbingdong/p/6442673.html
  ```
  
  
