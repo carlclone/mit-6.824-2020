@@ -74,6 +74,16 @@ All labs and assignment for the course
 
 ### Lab3B
 
+ 2020/08/16 任务拆分
+ 
+ - 超过阈值时,kvserver 发送 snapshot 给 raft , 判断的时机是在kvserver apply 了一个 entry 之后
+ - 启动kvserver 时(raft) , 需要先安装 snapshot(如果有)
+ - 封装kvserver snapshot 生成和应用的代码
+ - follower log 记录差太多的时候(baseIndex 和 nextIndex 对比) , leader 发送InstallSnapShotRPC
+ - follower 收到 SnapShotRPC,安装 snapshot
+ - 定义snapshot log entry数据结构
+
+
  2020/08/08 逻辑梳理+伪代码
  
  ```
