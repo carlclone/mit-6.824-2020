@@ -177,6 +177,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 			}
 			//取出pipe,返回结果
 			// 有没有这种可能： raft复制的太快了，pipe还没创建完就被applyCh读到了
+			kv.mu.Lock()
 			pipe, ok := kv.pipeMap[msg.CommandIndex]
 			kv.mu.Unlock()
 			if ok {
@@ -184,6 +185,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 				pipe <- op
 			}
+			kv.mu.Unlock()
 
 		}
 	}()
