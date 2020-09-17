@@ -11,10 +11,17 @@ package raft
 // snapshots) on the applyCh; at that point you can add fields to
 // ApplyMsg, but set CommandValid to false for these other uses.
 //
+
+const (
+	TYPE_NORMAL           = 1
+	TYPE_INSTALL_SNAPSHOT = 2
+)
+
 type ApplyMsg struct {
 	CommandValid bool
 	Command      interface{} //被复制的内容
 	CommandIndex int         //内容在复制机里的索引
+	Type         int
 }
 
 const (
