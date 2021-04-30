@@ -127,6 +127,21 @@ func (rf *Raft) GetState() (int, bool) {
 }
 
 //
+// save Raft's persistent state to stable storage,
+// where it can later be retrieved after a crash and restart.
+// see paper's Figure 2 for a description of what should be persistent.
+//
+func (rf *Raft) persist() {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.voteFor)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
+}
+
+//
 // restore previously persisted state.
 //
 func (rf *Raft) readPersist(data []byte) {
