@@ -42,7 +42,7 @@ func (rf *Raft) tryApply() {
 		rf.lastApplied++
 		log := rf.log[rf.lastApplied]
 		rf.print(LOG_PERSIST, "apply cI %v lA %v log %v", rf.commitIndex, rf.lastApplied, log)
-		rf.applyCh <- ApplyMsg{true, log.Command, log.Index}
+		rf.applyCh <- ApplyMsg{true, log.Command, log.Index, TYPE_NORMAL}
 	}
 }
 
@@ -124,21 +124,6 @@ func (rf *Raft) electionTimeOut() int {
 func (rf *Raft) GetState() (int, bool) {
 	//rf.print(LOG_ALL, "is leader %v", rf.role == ROLE_LEADER)
 	return rf.currentTerm, rf.role == ROLE_LEADER
-}
-
-//
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
-//
-func (rf *Raft) persist() {
-	w := new(bytes.Buffer)
-	e := labgob.NewEncoder(w)
-	e.Encode(rf.voteFor)
-	e.Encode(rf.currentTerm)
-	e.Encode(rf.log)
-	data := w.Bytes()
-	rf.persister.SaveRaftState(data)
 }
 
 //
