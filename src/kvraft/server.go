@@ -1,6 +1,7 @@
 package kvraft
 
 import (
+	"bytes"
 	"fmt"
 	"labgob"
 	"labrpc"
@@ -163,28 +164,43 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.ackNo = make(map[int64]int64)
 	kv.pipeMap = make(map[int]chan Op)
 
+	//A kvserver instance should restore the snapshot from the persister when it re-starts.
+	kv.restoreFromSnapShot(kv.rf.ReadSnapshot())
+
 	//开启loop thread , 监听applyCh
 	go func() {
 		for {
 			msg := <-kv.applyCh
-			//取出obj,强转成Op
-			op := msg.Command.(Op)
+			switch msg.Type {
+			//case raft.TYPE_INSTALL_SNAPSHOT:
 
-			//如果重复了就不执行put append , 这里主要是幂等问题，get天然幂等，关注重复是否有害
-			kv.mu.Lock()
-			if !kv.isDup(op) {
-				kv.updatePair(op)
+			default:
+				//取出obj,强转成Op
+				op := msg.Command.(Op)
+
+				//如果重复了就不执行put append , 这里主要是幂等问题，get天然幂等，关注重复是否有害
+				kv.mu.Lock()
+				if !kv.isDup(op) {
+					kv.updatePair(op)
+				}
+				pipe, ok := kv.pipeMap[msg.CommandIndex]
+				if ok {
+					kv.print(LOG_ALL, "取到msg %v", msg)
+
+					pipe <- op
+				}
 			}
-			//取出pipe,返回结果
-			// 有没有这种可能： raft复制的太快了，pipe还没创建完就被applyCh读到了
-			pipe, ok := kv.pipeMap[msg.CommandIndex]
+
+			//Modify your kvserver so that it detects when the persisted Raft state grows too large,
+			//and then hands a snapshot to Raft and tells Raft that it can discard old log entries
+			if kv.rf.OutOfBound(kv.maxraftstate) {
+				kv.print(LOG_ALL, "kvserver detect log grow too large,snapshot ing")
+				snapShot := kv.createSnapShot()
+				index := msg.CommandIndex //这个index 和之前的所有 log 都被 snapshot
+				kv.print(LOG_ALL, "kvserver snapshot create success,index and before to be discard %v", index)
+				kv.rf.SaveSnapShot(snapShot, index)
+			}
 			kv.mu.Unlock()
-			if ok {
-				kv.print(LOG_ALL, "取到msg %v", msg)
-
-				pipe <- op
-			}
-
 		}
 	}()
 
@@ -238,4 +254,37 @@ func (kv *KVServer) print(level int, format string, a ...interface{}) {
 
 	format = fmt.Sprintf("SERVER#%v  - %v", kv.me, format)
 	DPrintf(format, a...)
+}
+
+/*
+创建快照
+保存
+kvPairs      map[string]string
+requestCache map[int64]bool  //缓存客户端最后一个请求的结果
+ackNo        map[int64]int64
+*/
+func (kv *KVServer) createSnapShot() []byte {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(kv.kvPairs)
+	e.Encode(kv.requestCache)
+	e.Encode(kv.ackNo)
+	data := w.Bytes()
+	return data
+}
+
+func (kv *KVServer) restoreFromSnapShot(data []byte) {
+
+	if data == nil || len(data) < 1 { // bootstrap without any state?
+		return
+	}
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+
+	if d.Decode(&kv.kvPairs) != nil ||
+		d.Decode(&kv.requestCache) != nil ||
+		d.Decode(&kv.ackNo) != nil {
+	} else {
+
+	}
 }

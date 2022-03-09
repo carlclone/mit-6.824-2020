@@ -31,9 +31,20 @@ func (rf *Raft) OutOfBound(limitBytes int) bool {
 }
 
 func (rf *Raft) SaveSnapShot(shot []byte, index int) {
-	rf.persister.SaveStateAndSnapshot(rf.getRaftPersistState(), shot)
 
-	//discard log entrys
+	//Raft should save each snapshot with persister.SaveStateAndSnapshot() (don't use files).
+	rf.persister.SaveStateAndSnapshot(rf.getRaftPersistState(), shot)
+	rf.print(LOG_SNAPSHOT, "rf save snapshot succ")
+
+	//Modify your Raft so that it can be given a log index, discard the entries before that index,
+	//and continue operating while storing only log entries after that index.
+	//Make sure all the Lab 2 Raft tests still succeed.
+	//TODO;
+
+}
+
+func (rf *Raft) ReadSnapshot() []byte {
+	return rf.persister.ReadSnapshot()
 }
 
 type InstallSnapShotArgs struct {
