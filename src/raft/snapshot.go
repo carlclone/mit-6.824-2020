@@ -30,16 +30,28 @@ func (rf *Raft) OutOfBound(limitBytes int) bool {
 	return rf.persister.RaftStateSize() > limitBytes
 }
 
-func (rf *Raft) SaveSnapShot(shot []byte, index int) {
+func (rf *Raft) SaveSnapShot(shot []byte, indexToBeDis int) {
 
 	//Raft should save each snapshot with persister.SaveStateAndSnapshot() (don't use files).
 	rf.persister.SaveStateAndSnapshot(rf.getRaftPersistState(), shot)
 	rf.print(LOG_SNAPSHOT, "rf save snapshot succ")
 
 	//Modify your Raft so that it can be given a log index, discard the entries before that index,
+
 	//and continue operating while storing only log entries after that index.
 	//Make sure all the Lab 2 Raft tests still succeed.
-	//TODO;
+	/*
+			firstIdx .... disIdx  ....   curIdx
+		    2   3 4         5               10
+
+			0   1 2         3
+
+		   rf.log[4:]  ->    [4,curIdx)
+	*/
+	// actualIdx to be discard
+	firstIdx := rf.log[0].Index
+	realIdx := indexToBeDis - firstIdx
+	rf.log = rf.log[realIdx+1:]
 
 }
 
@@ -67,49 +79,4 @@ type InstallSnapShotReply struct {
 
 	ConflictTerm  int
 	ConflictIndex int
-}
-
-// if followCommitIndex < leaderOldestIndex
-//sendInstallRPC(ss,index)  //保证exactly once , 怎么做
-func (rf *Raft) sendInstallSnapShot(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	rf.print(LOG_ALL, "sendAe_ ")
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	rf.print(LOG_ALL, "sendAe OK:%v", ok)
-	if ok {
-		rf.respAERcvd <- AppendEntriesRequest{args, reply}
-	}
-	return ok
-}
-
-//event: receved InstallSSRPC
-//discardFrom(index)
-//update commitIndex and lastApplied
-//applyCh <- InstallSSCommand
-//persistSS()
-//persistRaftState()
-//
-//https://raft.github.io/
-//https://www.cnblogs.com/linbingdong/p/6442673.html
-func (rf *Raft) InstallSnapShot(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-
-	rf.print(LOG_ALL, "收到心跳包")
-
-	if rf.othersHasBiggerTerm(args.Term, rf.currentTerm) {
-		rf.print(LOG_ALL, "problem4_")
-		rf.becomeFollower(args.Term)
-		reply.Term = args.Term
-	}
-
-	if rf.othersHasSmallTerm(args.Term, rf.currentTerm) {
-		rf.print(LOG_ALL, "problem5_")
-		reply.Term = rf.currentTerm
-		return
-	}
-
-	rf.print(LOG_ALL, "problem1_")
-	rf.reqsAERcvd <- AppendEntriesRequest{args, reply}
-	rf.print(LOG_ALL, "problem2_")
-	<-rf.finishReqsAEHandle
-	rf.print(LOG_ALL, "problem3_")
-	return
 }
